@@ -14,24 +14,25 @@
  * limitations under the License.
  */
 
-#include <vector>
 
-#include "CubemapIBL.h"
+#include <ibl/CubemapIBL.h>
 
-#include "math/mat3.h"
-#include <math/scalar.h>
+#include <ibl/Cubemap.h>
+#include <ibl/CubemapUtils.h>
+#include <ibl/utilities.h>
+
 #include <utils/JobSystem.h>
 
-#include "Cubemap.h"
-#include "CubemapUtils.h"
-#include "ProgressUpdater.h"
-#include "utilities.h"
+#include <math/mat3.h>
+#include <math/scalar.h>
+
+#include <vector>
 
 using namespace filament::math;
-using namespace image;
 using namespace utils;
 
-extern bool g_quiet;
+namespace filament {
+namespace ibl {
 
 static double pow5(double x) {
     return (x*x)*(x*x)*x;
@@ -46,7 +47,7 @@ static double3 hemisphereImportanceSampleDggx(double2 u, double a) { // pdf = D(
     return { sinTheta * std::cos(phi), sinTheta * std::sin(phi), cosTheta };
 }
 
-static double3 __UNUSED hemisphereCosSample(double2 u) {  // pdf = cosTheta / M_PI;
+static double3 UTILS_UNUSED hemisphereCosSample(double2 u) {  // pdf = cosTheta / M_PI;
     const double phi = 2 * M_PI * u.x;
     const double cosTheta2 = 1 - u.y;
     const double cosTheta = std::sqrt(cosTheta2);
@@ -54,7 +55,7 @@ static double3 __UNUSED hemisphereCosSample(double2 u) {  // pdf = cosTheta / M_
     return { sinTheta * std::cos(phi), sinTheta * std::sin(phi), cosTheta };
 }
 
-static double3 __UNUSED hemisphereUniformSample(double2 u) { // pdf = 1.0 / (2.0 * M_PI);
+static double3 UTILS_UNUSED hemisphereUniformSample(double2 u) { // pdf = 1.0 / (2.0 * M_PI);
     const double phi = 2 * M_PI * u.x;
     const double cosTheta = 1 - u.y;
     const double sinTheta = std::sqrt(1 - cosTheta * cosTheta);
@@ -64,7 +65,7 @@ static double3 __UNUSED hemisphereUniformSample(double2 u) { // pdf = 1.0 / (2.0
 /*
  *
  * Importance sampling Charlie
- * ------------------------------------------
+ * ---------------------------
  *
  * In order to pick the most significative samples and increase the convergence rate, we chose to
  * rely on Charlie's distribution function for the pdf as we do in hemisphereImportanceSampleDggx.
@@ -118,7 +119,7 @@ static double3 __UNUSED hemisphereUniformSample(double2 u) { // pdf = 1.0 / (2.0
  *  |                                            |
  *  +--------------------------------------------+
  */
-static double3 __UNUSED hemisphereImportanceSampleDCharlie(double2 u, double a) { // pdf = DistributionCharlie() * cosTheta
+static double3 UTILS_UNUSED hemisphereImportanceSampleDCharlie(double2 u, double a) { // pdf = DistributionCharlie() * cosTheta
     const double phi = 2 * M_PI * u.x;
 
     const double sinTheta = std::pow(u.y, a / (2 * a + 1));
@@ -134,7 +135,7 @@ static double DistributionGGX(double NoH, double linearRoughness) {
     return (a * a) / (M_PI * f * f);
 }
 
-static double __UNUSED DistributionAshikhmin(double NoH, double linearRoughness) {
+static double UTILS_UNUSED DistributionAshikhmin(double NoH, double linearRoughness) {
     double a = linearRoughness;
     double a2 = a * a;
     double cos2h = NoH * NoH;
@@ -143,7 +144,7 @@ static double __UNUSED DistributionAshikhmin(double NoH, double linearRoughness)
     return 1 / (M_PI * (1 + 4 * a2)) * (sin4h + 4 * std::exp(-cos2h / (a2 * sin2h)));
 }
 
-static double __UNUSED DistributionCharlie(double NoH, double linearRoughness) {
+static double UTILS_UNUSED DistributionCharlie(double NoH, double linearRoughness) {
     // Estevez and Kulla 2017, "Production Friendly Microfacet Sheen BRDF"
     double a = linearRoughness;
     double invAlpha = 1 / a;
@@ -166,7 +167,7 @@ static double Visibility(double NoV, double NoL, double a) {
     return 0.5 / (GGXV + GGXL);
 }
 
-static double __UNUSED VisibilityAshikhmin(double NoV, double NoL, double a) {
+static double UTILS_UNUSED VisibilityAshikhmin(double NoV, double NoL, double /*a*/) {
     // Neubelt and Pettineo 2013, "Crafting a Next-gen Material Pipeline for The Order: 1886"
     return 1 / (4 * (NoL + NoV - NoL * NoV));
 }
@@ -282,8 +283,8 @@ static double __UNUSED VisibilityAshikhmin(double NoV, double NoL, double a) {
  *
  */
 
-void CubemapIBL::roughnessFilter(Cubemap& dst,
-        const std::vector<Cubemap>& levels, double linearRoughness, size_t maxNumSamples)
+void CubemapIBL::roughnessFilter(Cubemap& dst, const std::vector<Cubemap>& levels,
+        double linearRoughness, size_t maxNumSamples, CubemapIBL::Progress updater)
 {
     const float numSamples = maxNumSamples;
     const float inumSamples = 1.0f / numSamples;
@@ -292,19 +293,14 @@ void CubemapIBL::roughnessFilter(Cubemap& dst,
     const Cubemap& base(levels[0]);
     const size_t dim0 = base.getDimensions();
     const float omegaP = float((4 * M_PI) / (6 * dim0 * dim0));
-
-    ProgressUpdater updater(1);
     std::atomic_uint progress = {0};
 
     if (linearRoughness == 0) {
-        if (!g_quiet) {
-            updater.start();
-        }
-        CubemapUtils::process<CubemapUtils::EmptyState>(dst, [&, quiet = g_quiet]
+        CubemapUtils::process<CubemapUtils::EmptyState>(dst, [&]
                 (CubemapUtils::EmptyState&, size_t y, Cubemap::Face f, Cubemap::Texel* data, size_t dim) {
                     size_t p = progress.fetch_add(1, std::memory_order_relaxed) + 1;
-                    if (!quiet) {
-                        updater.update(0, p, dim * 6);
+                    if (updater) {
+                        updater(0, (float)p / (dim * 6));
                     }
                     const Cubemap& cm = levels[0];
                     for (size_t x = 0; x < dim; ++x, ++data) {
@@ -314,9 +310,6 @@ void CubemapIBL::roughnessFilter(Cubemap& dst,
                         Cubemap::writeAt(data, cm.sampleAt(N));
                     }
                 });
-        if (!g_quiet) {
-            updater.stop();
-        }
         return;
     }
 
@@ -396,17 +389,13 @@ void CubemapIBL::roughnessFilter(Cubemap& dst,
         return lhs.brdf_NoL < rhs.brdf_NoL;
     });
 
-    if (!g_quiet) {
-        updater.start();
-    }
-
     CubemapUtils::process<CubemapUtils::EmptyState>(dst,
-            [ &, quiet=g_quiet ](CubemapUtils::EmptyState&, size_t y,
+            [&](CubemapUtils::EmptyState&, size_t y,
                     Cubemap::Face f, Cubemap::Texel* data, size_t dim) {
 
         size_t p = progress.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (!quiet) {
-            updater.update(0, p, dim * 6);
+        if (updater) {
+            updater(0, (float)p / (dim * 6));
         }
 
         mat3 R;
@@ -433,10 +422,6 @@ void CubemapIBL::roughnessFilter(Cubemap& dst,
             Cubemap::writeAt(data, Cubemap::Texel(Li));
         }
     });
-
-    if (!g_quiet) {
-        updater.stop();
-    }
 }
 
 /*
@@ -525,7 +510,8 @@ void CubemapIBL::roughnessFilter(Cubemap& dst,
  *
  */
 
-void CubemapIBL::diffuseIrradiance(Cubemap& dst, const std::vector<Cubemap>& levels, size_t maxNumSamples)
+void CubemapIBL::diffuseIrradiance(Cubemap& dst, const std::vector<Cubemap>& levels,
+        size_t maxNumSamples, CubemapIBL::Progress updater)
 {
     const float numSamples = maxNumSamples;
     const float inumSamples = 1.0f / numSamples;
@@ -535,9 +521,7 @@ void CubemapIBL::diffuseIrradiance(Cubemap& dst, const std::vector<Cubemap>& lev
     const size_t dim0 = base.getDimensions();
     const float omegaP = float((4 * M_PI) / (6 * dim0 * dim0));
 
-    ProgressUpdater updater(1);
     std::atomic_uint progress = {0};
-
 
     struct CacheEntry {
         double3 L;
@@ -573,17 +557,13 @@ void CubemapIBL::diffuseIrradiance(Cubemap& dst, const std::vector<Cubemap>& lev
         }
     }
 
-    if (!g_quiet) {
-        updater.start();
-    }
-
     CubemapUtils::process<CubemapUtils::EmptyState>(dst,
-            [ &, quiet=g_quiet ](CubemapUtils::EmptyState&, size_t y,
+            [&](CubemapUtils::EmptyState&, size_t y,
                     Cubemap::Face f, Cubemap::Texel* data, size_t dim) {
 
         size_t p = progress.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (!quiet) {
-            updater.update(0, p, dim * 6);
+        if (updater) {
+            updater(0, (float)p / (dim * 6));
         }
 
         mat3 R;
@@ -610,14 +590,10 @@ void CubemapIBL::diffuseIrradiance(Cubemap& dst, const std::vector<Cubemap>& lev
             Cubemap::writeAt(data, Cubemap::Texel(Li * inumSamples));
         }
     });
-
-    if (!g_quiet) {
-        updater.stop();
-    }
 }
 
 // Not importance-sampled
-static double2 __UNUSED DFV_NoIS(double NoV, double roughness, size_t numSamples) {
+static double2 UTILS_UNUSED DFV_NoIS(double NoV, double roughness, size_t numSamples) {
     double2 r = 0;
     const double linearRoughness = roughness * roughness;
     const double3 V(std::sqrt(1 - NoV * NoV), 0, NoV);
@@ -838,7 +814,7 @@ static double DFV_Charlie_Uniform(double NoV, double linearRoughness, size_t num
 /*
  *
  * Importance sampling Charlie
- * ------------------------------------------
+ * ---------------------------
  *
  * Important samples are chosen to integrate DCharlie() * cos(theta) over the hemisphere.
  *
@@ -908,19 +884,19 @@ static double DFV_Charlie_Uniform(double NoV, double linearRoughness, size_t num
  *
  *  It results that:
  *
- *            1                        4 <v•h>
+ *            1                          4 <v•h>
  *    Er() = --- ∑ DCharlie(h) V(v, l) ------------ <n•l>
  *            N  h                     DCharlie(h) <n•h>
  *
  *
  *  +---------------------------------------+
  *  |          4             <v•h>          |
- *  |  Er() = --- ∑ V(v, l) --- <n•l>       |
+ *  |  Er() = --- ∑ V(v, l) ------- <n•l>   |
  *  |          N  h          <n•h>          |
  *  +---------------------------------------+
  *
  */
-static double __UNUSED DFV_Charlie_IS(double NoV, double linearRoughness, size_t numSamples) {
+static double UTILS_UNUSED DFV_Charlie_IS(double NoV, double linearRoughness, size_t numSamples) {
     double r = 0.0;
     const double3 V(std::sqrt(1 - NoV * NoV), 0, NoV);
     for (size_t i = 0; i < numSamples; i++) {
@@ -968,10 +944,10 @@ void CubemapIBL::brdf(Cubemap& dst, double linearRoughness) {
 }
 
 void CubemapIBL::DFG(Image& dst, bool multiscatter, bool cloth) {
-    auto dfvFunction = multiscatter ? ::DFV_Multiscatter : ::DFV;
+    auto dfvFunction = multiscatter ? DFV_Multiscatter : DFV;
     JobSystem& js = CubemapUtils::getJobSystem();
     auto job = jobs::parallel_for<char>(js, nullptr, nullptr, uint32_t(dst.getHeight()),
-            [&dst, dfvFunction, cloth](char* d, size_t c) {
+            [&dst, dfvFunction, cloth](char const* d, size_t c) {
                 const size_t width = dst.getWidth();
                 const size_t height = dst.getHeight();
                 size_t y0 = size_t(d);
@@ -997,3 +973,6 @@ void CubemapIBL::DFG(Image& dst, bool multiscatter, bool cloth) {
             }, jobs::CountSplitter<1, 8>());
     js.runAndWait(job);
 }
+
+} // namespace ibl
+} // namespace filament

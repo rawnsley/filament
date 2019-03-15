@@ -14,16 +14,19 @@
  * limitations under the License.
  */
 
-#include "Cubemap.h"
+#include <ibl/Cubemap.h>
 
 using namespace filament::math;
+
+namespace filament {
+namespace ibl {
+
 
 Cubemap::Cubemap(size_t dim) {
     resetDimensions(dim);
 }
 
-Cubemap::~Cubemap() {
-}
+Cubemap::~Cubemap() = default;
 
 size_t Cubemap::getDimensions() const {
     return mDimensions;
@@ -33,8 +36,8 @@ void Cubemap::resetDimensions(size_t dim) {
     mDimensions = dim;
     mScale = 2.0 / dim;
     mUpperBound = std::nextafter(mDimensions, 0);
-    for (size_t i = 0; i < 6; i++) {
-        mFaces[i].reset();
+    for (auto& mFace : mFaces) {
+        mFace.reset();
     }
 }
 
@@ -87,13 +90,7 @@ Cubemap::Address Cubemap::getAddressFor(const double3& r) {
     addr.t = (tc / ma + 1) * 0.5f;
     return addr;
 }
-/*
- * We handle "seamless" cubemaps by duplicating a row to the bottom, or column to the right
- * of each faces that don't have an adjacent face in the image (the duplicate is taken from the
- * adjacent face in the cubemap).
- * This is because when accessing an image with bilinear filtering, we always overshoot to the
- * right or bottom. This works well with cubemaps stored as a cross in memory.
- */
+
 void Cubemap::makeSeamless() {
     size_t dim = getDimensions();
     size_t D = dim;
@@ -207,3 +204,6 @@ Cubemap::Texel Cubemap::trilinearFilterAt(const Cubemap& l0, const Cubemap& l1, 
     }
     return c0;
 }
+
+} // namespace ibl
+} // namespace filament

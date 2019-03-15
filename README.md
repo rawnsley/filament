@@ -136,6 +136,7 @@ and tools.
 - `shaders`:               Shaders used by `filamat` and `matc`
 - `third_party`:           External libraries and assets
   - `environments`:        Environment maps under CC0 license that can be used with `cmgen`
+  - `models`:              Models under permissive licenses
   - `textures`:            Textures under CC0 license
 - `tools`:                 Host tools
   - `cmgen`:               Image-based lighting asset generator
@@ -157,7 +158,7 @@ and tools.
 
 To build Filament, you must first install the following tools:
 
-- CMake 3.13 (or more recent)
+- CMake 3.10 (or more recent)
 - clang 7.0 (or more recent)
 - [ninja 1.8](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages) (or more recent)
 

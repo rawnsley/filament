@@ -14,20 +14,29 @@
  * limitations under the License.
  */
 
-#include "CubemapUtils.h"
+#include <ibl/CubemapUtils.h>
+
+#include <ibl/utilities.h>
 
 #include <utils/JobSystem.h>
 
 #include <math/mat4.h>
 
 #include <algorithm>
-#include <cmath>
 
-#include <string.h>
+#include <math.h>
 
 using namespace filament::math;
-using namespace image;
 using namespace utils;
+
+namespace filament {
+namespace ibl {
+
+utils::JobSystem& CubemapUtils::getJobSystem() {
+    static utils::JobSystem js;
+    js.adopt();
+    return js;
+}
 
 void CubemapUtils::clamp(Image& src) {
     // We clamp all values to 256 which correspond to the maximum value (before
@@ -283,16 +292,12 @@ Image CubemapUtils::createCubemapImage(size_t dim, bool horizontal) {
         std::swap(width, height);
     }
 
-    size_t bpr = width * sizeof(Cubemap::Texel);
-    bpr = (bpr + 31) & ~31;
-    size_t bufSize = bpr * height;
-    std::unique_ptr<uint8_t[]> data(new uint8_t[bufSize]);
-    memset(data.get(), 0, bufSize);
-    Image image(std::move(data), width, height, bpr, sizeof(Cubemap::Texel));
+    Image image(width, height);
+    memset(image.getData(), 0, image.getBytesPerRow() * height);
     return image;
 }
 
-std::string CubemapUtils::getFaceName(Cubemap::Face face) {
+const char* CubemapUtils::getFaceName(Cubemap::Face face) {
     switch (face) {
         case Cubemap::Face::NX: return "nx";
         case Cubemap::Face::PX: return "px";
@@ -379,3 +384,6 @@ double CubemapUtils::solidAngle(size_t dim, size_t u, size_t v) {
                         sphereQuadrantArea(x1, y1);
     return solidAngle;
 }
+
+} // namespace ibl
+} // namespace filament

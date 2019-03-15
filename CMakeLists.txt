@@ -303,7 +303,9 @@ endif()
 # ==================================================================================================
 
 # Sets the following variables: RESGEN_HEADER, RESGEN_SOURCE, RESGEN_FLAGS, RESGEN_SOURCE_FLAGS,
-# and RESGEN_OUTPUTS
+# and RESGEN_OUTPUTS. Please pass in an ARCHIVE_NAME that is unique to your project, otherwise the
+# incbin directive will happily consume a blob from the wrong project without warnings or errors.
+# Also be sure to include the ASM language in the CMake "project" directive for your project.
 function(get_resgen_vars ARCHIVE_DIR ARCHIVE_NAME)
     set(OUTPUTS
         ${ARCHIVE_DIR}/${ARCHIVE_NAME}.bin
@@ -318,7 +320,7 @@ function(get_resgen_vars ARCHIVE_DIR ARCHIVE_NAME)
     set(RESGEN_HEADER "${ARCHIVE_DIR}/${ARCHIVE_NAME}.h" PARENT_SCOPE)
     # Visual Studio makes it difficult to use assembly without using MASM. MASM doesn't support
     # the equivalent of .incbin, so on Windows we'll just tell resgen to output a C file.
-    if (WEBGL OR WIN32)
+    if (WEBGL OR WIN32 OR ANDROID_ON_WINDOWS)
         set(RESGEN_OUTPUTS "${OUTPUTS};${ARCHIVE_DIR}/${ARCHIVE_NAME}.c" PARENT_SCOPE)
         set(RESGEN_FLAGS -cx ${ARCHIVE_DIR} -p ${ARCHIVE_NAME} PARENT_SCOPE)
         set(RESGEN_SOURCE "${ARCHIVE_DIR}/${ARCHIVE_NAME}.c" PARENT_SCOPE)
@@ -340,6 +342,7 @@ add_subdirectory(${LIBRARIES}/filabridge)
 add_subdirectory(${LIBRARIES}/filaflat)
 add_subdirectory(${LIBRARIES}/filameshio)
 add_subdirectory(${LIBRARIES}/geometry)
+add_subdirectory(${LIBRARIES}/ibl)
 add_subdirectory(${LIBRARIES}/image)
 add_subdirectory(${LIBRARIES}/math)
 add_subdirectory(${LIBRARIES}/utils)

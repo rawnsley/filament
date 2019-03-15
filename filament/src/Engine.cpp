@@ -597,6 +597,16 @@ FCamera* FEngine::createCamera(Entity entity) noexcept {
     return mCameraManager.create(entity);
 }
 
+FCamera* FEngine::getCameraComponent(Entity entity) noexcept {
+    auto ci = mCameraManager.getInstance(entity);
+    return ci ? mCameraManager.getCamera(ci) : nullptr;
+}
+
+void FEngine::destroyCameraComponent(utils::Entity entity) noexcept {
+    mCameraManager.destroy(entity);
+}
+
+
 void FEngine::createRenderable(const RenderableManager::Builder& builder, Entity entity) {
     mRenderableManager.create(builder, entity);
     auto& tcm = mTransformManager;
@@ -807,6 +817,10 @@ const Material* Engine::getDefaultMaterial() const noexcept {
     return upcast(this)->getDefaultMaterial();
 }
 
+Backend Engine::getBackend() const noexcept {
+    return upcast(this)->getBackend();
+}
+
 Renderer* Engine::createRenderer() noexcept {
     return upcast(this)->createRenderer();
 }
@@ -821,6 +835,14 @@ Scene* Engine::createScene() noexcept {
 
 Camera* Engine::createCamera(Entity entity) noexcept {
     return upcast(this)->createCamera(entity);
+}
+
+Camera* Engine::getCameraComponent(utils::Entity entity) noexcept {
+    return upcast(this)->getCameraComponent(entity);
+}
+
+void Engine::destroyCameraComponent(utils::Entity entity) noexcept {
+    upcast(this)->destroyCameraComponent(entity);
 }
 
 Fence* Engine::createFence(Fence::Type type) noexcept {

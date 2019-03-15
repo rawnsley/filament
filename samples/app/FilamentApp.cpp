@@ -192,7 +192,16 @@ void FilamentApp::run(const Config& config, SetupCallback setupCallback,
 
     bool mousePressed[3] = { false };
 
+    int sidebarWidth = mSidebarWidth;
+
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+
     while (!mClosed) {
+
+        if (mSidebarWidth != sidebarWidth) {
+            window->configureCamerasForWindow();
+            sidebarWidth = mSidebarWidth;
+        }
 
         if (!UTILS_HAS_THREADING) {
             mEngine->execute();
@@ -277,6 +286,12 @@ void FilamentApp::run(const Config& config, SetupCallback setupCallback,
                     if (!io || !io->WantCaptureMouse)
                         window->mouseMoved(event.motion.x, event.motion.y);
                     break;
+                case SDL_DROPFILE:
+                    if (mDropHandler) {
+                        mDropHandler(event.drop.file);
+                    }
+                    SDL_free(event.drop.file);
+                    break;
                 case SDL_WINDOWEVENT:
                     switch (event.window.event) {
                         case SDL_WINDOWEVENT_RESIZED:
@@ -350,6 +365,8 @@ void FilamentApp::run(const Config& config, SetupCallback setupCallback,
                 renderer->render(view->getView());
             }
             renderer->endFrame();
+        } else {
+            ++mSkippedFrames;
         }
 
         if (postRender) {
@@ -605,10 +622,11 @@ void FilamentApp::Window::configureCamerasForWindow() {
 
     const float3 at(0, 0, -4);
     const double ratio = double(h) / double(w);
+    const int sidebar = mFilamentApp->mSidebarWidth * dpiScaleX;
 
     double near = 0.1;
     double far = 50;
-    mMainCamera->setProjection(45.0, double(w) / h, near, far, Camera::Fov::VERTICAL);
+    mMainCamera->setProjection(45.0, double(w - sidebar) / h, near, far, Camera::Fov::VERTICAL);
     mDebugCamera->setProjection(45.0, double(w) / h, 0.0625, 4096, Camera::Fov::VERTICAL);
     mOrthoCamera->setProjection(Camera::Projection::ORTHO, -3, 3, -3 * ratio, 3 * ratio, near, far);
     mOrthoCamera->lookAt(at + float3{ 4, 0, 0 }, at);
@@ -631,7 +649,7 @@ void FilamentApp::Window::configureCamerasForWindow() {
         mGodView->getCameraManipulator()->updateCameraTransform();
         mOrthoView->getCameraManipulator()->updateCameraTransform();
     } else {
-        mMainView->setViewport({ 0, 0, w, h });
+        mMainView->setViewport({ sidebar, 0, w - sidebar, h });
     }
     mUiView->setViewport({ 0, 0, w, h });
 }

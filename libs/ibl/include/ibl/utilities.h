@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
-#ifndef SRC_UTILITIES_H_
-#define SRC_UTILITIES_H_
+#ifndef IBL_UTILITIES_H
+#define IBL_UTILITIES_H
 
-#include <cmath>
+#include <math.h>
 
 #include <math/vec2.h>
 #include <math/vec3.h>
+
+namespace filament {
+namespace ibl {
 
 template<typename T>
 static inline constexpr T sq(T x) {
@@ -35,7 +38,7 @@ static inline constexpr T log4(T x) {
 }
 
 inline bool isPOT(size_t x) {
-    return !(x & (x-1));
+    return !(x & (x - 1));
 }
 
 inline filament::math::double2 hammersley(uint32_t i, float iN) {
@@ -49,6 +52,6 @@ inline filament::math::double2 hammersley(uint32_t i, float iN) {
     return { i * iN, bits * tof };
 }
 
-#define __UNUSED __attribute__((__unused__))
-
-#endif /* SRC_UTILITIES_H_ */
+} // namespace ibl
+} // namespace filament
+#endif /* IBL_UTILITIES_H */
