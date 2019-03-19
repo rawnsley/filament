@@ -33,8 +33,6 @@
 #pragma clang diagnostic ignored "-Wreturn-stack-address"
 #pragma clang diagnostic ignored "-Wunused-parameter"
 
-static constexpr bool SWAPCHAIN_HAS_DEPTH = true;
-
 namespace filament {
 namespace driver {
 
@@ -187,6 +185,13 @@ void VulkanDriver::terminate() {
         return;
     }
     waitForIdle(mContext);
+
+    // Destroy the work command buffer and fence.
+    WorkContext work = mContext.work;
+    VkDevice device = mContext.device;
+    vkFreeCommandBuffers(device, mContext.commandPool, 1, &work.cmdbuffer);
+    vkDestroyFence(device, work.fence, VKALLOC);
+
     mBinder.destroyCache();
     mStagePool.reset();
     mFramebufferCache.reset();
@@ -329,15 +334,10 @@ void VulkanDriver::createSwapChainR(Driver::SwapChainHandle sch, void* nativeWin
             mContext.instance, &sc.clientSize.width, &sc.clientSize.height);
     getPresentationQueue(mContext, sc);
     getSurfaceCaps(mContext, sc);
-    createSwapChainAndImages(mContext, sc);
-    createCommandBuffersAndFences(mContext, sc);
+    createSwapChain(mContext, sc);
 
     // TODO: move the following line into makeCurrent.
     mContext.currentSurface = &sc;
-
-    if (SWAPCHAIN_HAS_DEPTH) {
-        transitionDepthBuffer(mContext, sc, mContext.depthFormat);
-    }
 }
 
 void VulkanDriver::createStreamFromTextureIdR(Driver::StreamHandle sh, intptr_t externalTextureId,
@@ -725,7 +725,29 @@ void VulkanDriver::commit(Driver::SwapChainHandle sch) {
     // Tell Vulkan we're done appending to the command buffer.
     ASSERT_POSTCONDITION(mContext.cmdbuffer,
             "Vulkan driver requires at least one frame before a commit.");
-    releaseCommandBuffer(mContext);
+
+    // Finalize the command buffer and set the cmdbuffer pointer to null.
+    VkResult result = vkEndCommandBuffer(mContext.cmdbuffer);
+    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkEndCommandBuffer error.");
+    mContext.cmdbuffer = nullptr;
+
+    // Submit the command buffer.
+    VkPipelineStageFlags waitDestStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    VulkanSurfaceContext& surfaceContext = *mContext.currentSurface;
+    SwapContext& swapContext = getSwapContext(mContext);
+    VkSubmitInfo submitInfo {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = 1u,
+            .pWaitSemaphores = &surfaceContext.imageAvailable,
+            .pWaitDstStageMask = &waitDestStageMask,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &swapContext.cmdbuffer,
+            .signalSemaphoreCount = 1u,
+            .pSignalSemaphores = &surfaceContext.renderingFinished,
+    };
+    result = vkQueueSubmit(mContext.graphicsQueue, 1, &submitInfo, swapContext.fence);
+    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkQueueSubmit error.");
+    swapContext.submitted = true;
 
     // Present the backbuffer.
     VulkanSurfaceContext& surface = handle_cast<VulkanSwapChain>(mHandleMap, sch)->surfaceContext;
@@ -737,7 +759,7 @@ void VulkanDriver::commit(Driver::SwapChainHandle sch) {
         .pSwapchains = &surface.swapchain,
         .pImageIndices = &surface.currentSwapIndex,
     };
-    VkResult result = vkQueuePresentKHR(surface.presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(surface.presentQueue, &presentInfo);
     ASSERT_POSTCONDITION(result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR,
             "Stale / resized swap chain not yet supported.");
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkQueuePresentKHR error.");

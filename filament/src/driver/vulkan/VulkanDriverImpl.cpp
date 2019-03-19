@@ -203,6 +203,17 @@ void createVirtualDevice(VulkanContext& context) {
         .pVulkanFunctions = &funcs
     };
     vmaCreateAllocator(&allocatorInfo, &context.allocator);
+
+    // Create the work command buffer and fence for work unrelated to the swap chain.
+    VkCommandBufferAllocateInfo allocateInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = context.commandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+    VkFenceCreateInfo fenceCreateInfo { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, };
+    vkAllocateCommandBuffers(context.device, &allocateInfo, &context.work.cmdbuffer);
+    vkCreateFence(context.device, &fenceCreateInfo, VKALLOC, &context.work.fence);
 }
 
 void createSemaphore(VkDevice device, VkSemaphore *semaphore) {
@@ -266,7 +277,7 @@ void getSurfaceCaps(VulkanContext& context, VulkanSurfaceContext& sc) {
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkGetPhysicalDeviceSurfaceFormatsKHR error.");
 }
 
-void createSwapChainAndImages(VulkanContext& context, VulkanSurfaceContext& surfaceContext) {
+void createSwapChain(VulkanContext& context, VulkanSurfaceContext& surfaceContext) {
     // The general advice is to require one more than the minimum swap chain length, since the
     // absolute minimum could easily require waiting for a driver or presentation layer to release
     // the previous frame's buffer. The only situation in which we'd ask for the minimum length is
@@ -356,116 +367,6 @@ void createSwapChainAndImages(VulkanContext& context, VulkanSurfaceContext& surf
     createSemaphore(context.device, &surfaceContext.imageAvailable);
     createSemaphore(context.device, &surfaceContext.renderingFinished);
 
-    surfaceContext.depth = {};
-}
-
-void createDepthBuffer(VulkanContext& context, VulkanSurfaceContext& surfaceContext,
-        VkFormat depthFormat) {
-    assert(context.cmdbuffer);
-
-    // Create an appropriately-sized device-only VkImage.
-    const auto size = surfaceContext.surfaceCapabilities.currentExtent;
-    VkImage depthImage;
-    VkImageCreateInfo imageInfo {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .extent = { size.width, size.height, 1 },
-        .format = depthFormat,
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-    };
-    VkResult error = vkCreateImage(context.device, &imageInfo, VKALLOC, &depthImage);
-    ASSERT_POSTCONDITION(!error, "Unable to create depth image.");
-
-    // Allocate memory for the VkImage and bind it.
-    VkMemoryRequirements memReqs;
-    vkGetImageMemoryRequirements(context.device, depthImage, &memReqs);
-    VkMemoryAllocateInfo allocInfo {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = memReqs.size,
-        .memoryTypeIndex = selectMemoryType(context, memReqs.memoryTypeBits,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-    };
-    error = vkAllocateMemory(context.device, &allocInfo, nullptr,
-            &surfaceContext.depth.memory);
-    ASSERT_POSTCONDITION(!error, "Unable to allocate depth memory.");
-    error = vkBindImageMemory(context.device, depthImage, surfaceContext.depth.memory, 0);
-    ASSERT_POSTCONDITION(!error, "Unable to bind depth memory.");
-
-    // Create a VkImageView so that we can attach depth to the framebuffer.
-    VkImageView depthView;
-    VkImageViewCreateInfo viewInfo {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = depthImage,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = depthFormat,
-        .subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-        .subresourceRange.levelCount = 1,
-        .subresourceRange.layerCount = 1,
-    };
-    error = vkCreateImageView(context.device, &viewInfo, VKALLOC, &depthView);
-    ASSERT_POSTCONDITION(!error, "Unable to create depth view.");
-
-    // Transition the depth image into an optimal layout.
-    VkImageMemoryBarrier barrier {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = depthImage,
-        .subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-        .subresourceRange.levelCount = 1,
-        .subresourceRange.layerCount = 1,
-        .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
-    };
-    vkCmdPipelineBarrier(context.cmdbuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-    // Go ahead and set the depth attachment fields, which serves as a signal to VulkanDriver that
-    // it is now ready.
-    surfaceContext.depth.view = depthView;
-    surfaceContext.depth.image = depthImage;
-    surfaceContext.depth.format = depthFormat;
-}
-
-void transitionDepthBuffer(VulkanContext& context, VulkanSurfaceContext& sc, VkFormat depthFormat) {
-    // Begin a new command buffer solely for the purpose of transitioning the image layout.
-    SwapContext& swap = getSwapContext(context);
-    VkResult result = vkWaitForFences(context.device, 1, &swap.fence, VK_FALSE, UINT64_MAX);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkWaitForFences error.");
-    result = vkResetFences(context.device, 1, &swap.fence);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkResetFences error.");
-    VkCommandBuffer cmdbuffer = swap.cmdbuffer;
-    result = vkResetCommandBuffer(cmdbuffer, 0);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkResetCommandBuffer error.");
-    VkCommandBufferBeginInfo beginInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
-    };
-    result = vkBeginCommandBuffer(cmdbuffer, &beginInfo);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkBeginCommandBuffer error.");
-    context.cmdbuffer = cmdbuffer;
-
-    // Create the depth buffer and issue a pipeline barrier command.
-    createDepthBuffer(context, sc, depthFormat);
-
-    // Flush the command buffer.
-    result = vkEndCommandBuffer(context.cmdbuffer);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkEndCommandBuffer error.");
-    context.cmdbuffer = nullptr;
-    VkSubmitInfo submitInfo {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &swap.cmdbuffer,
-    };
-    result = vkQueueSubmit(context.graphicsQueue, 1, &submitInfo, swap.fence);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkQueueSubmit error.");
-    swap.submitted = false;
-}
-
-void createCommandBuffersAndFences(VulkanContext& context, VulkanSurfaceContext& surfaceContext) {
     // Allocate command buffers.
     VkCommandBufferAllocateInfo allocateInfo = {};
     allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -473,7 +374,7 @@ void createCommandBuffersAndFences(VulkanContext& context, VulkanSurfaceContext&
     allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocateInfo.commandBufferCount = (uint32_t) surfaceContext.swapContexts.size();
     std::vector<VkCommandBuffer> cmdbufs(allocateInfo.commandBufferCount);
-    VkResult result = vkAllocateCommandBuffers(context.device, &allocateInfo, cmdbufs.data());
+    result = vkAllocateCommandBuffers(context.device, &allocateInfo, cmdbufs.data());
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkAllocateCommandBuffers error.");
     for (uint32_t i = 0; i < allocateInfo.commandBufferCount; ++i) {
         surfaceContext.swapContexts[i].cmdbuffer = cmdbufs[i];
@@ -502,9 +403,6 @@ void destroySurfaceContext(VulkanContext& context, VulkanSurfaceContext& surface
     vkDestroySemaphore(context.device, surfaceContext.imageAvailable, VKALLOC);
     vkDestroySemaphore(context.device, surfaceContext.renderingFinished, VKALLOC);
     vkDestroySurfaceKHR(context.instance, surfaceContext.surface, VKALLOC);
-    vkDestroyImageView(context.device, surfaceContext.depth.view, VKALLOC);
-    vkDestroyImage(context.device, surfaceContext.depth.image, VKALLOC);
-    vkFreeMemory(context.device, surfaceContext.depth.memory, VKALLOC);
     if (context.currentSurface == &surfaceContext) {
         context.currentSurface = nullptr;
     }
@@ -825,52 +723,36 @@ void waitForIdle(VulkanContext& context) {
     // We cannot invoke arbitrary commands inside a render pass.
     assert(context.currentRenderPass.renderPass == VK_NULL_HANDLE);
 
-    // Create a one-off command buffer to avoid the cost of swap chain acquisition and to avoid
-    // the possibility of SURFACE_LOST. Note that Vulkan command buffers use the Allocate/Free
-    // model instead of Create/Destroy and are therefore okay to create at a high frequency.
-    VkCommandBuffer cmdbuffer;
-    VkFence fence;
-    VkCommandBufferBeginInfo beginInfo { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    VkCommandBufferAllocateInfo allocateInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = context.commandPool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1
-    };
-    VkFenceCreateInfo fenceCreateInfo { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, };
-    vkAllocateCommandBuffers(context.device, &allocateInfo, &cmdbuffer);
-    vkCreateFence(context.device, &fenceCreateInfo, VKALLOC, &fence);
-
     // Keep performing work until there's nothing queued up. This should never iterate more than
     // a couple times because the only work we queue up is for resource transition / reclamation.
+    WorkContext work = context.work;
     VkPipelineStageFlags waitDestStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
     VkSubmitInfo submitInfo {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .pWaitDstStageMask = &waitDestStageMask,
         .commandBufferCount = 1,
-        .pCommandBuffers = &cmdbuffer,
+        .pCommandBuffers = &work.cmdbuffer,
     };
+    VkCommandBufferBeginInfo beginInfo { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     int cycles = 0;
     while (hasPendingWork(context)) {
         if (cycles++ > 2) {
             utils::slog.e << "Unexpected daisychaining of pending work." << utils::io::endl;
             break;
         }
-        vkBeginCommandBuffer(cmdbuffer, &beginInfo);
+        vkBeginCommandBuffer(work.cmdbuffer, &beginInfo);
         if (context.currentSurface) {
             for (auto& swapContext : context.currentSurface->swapContexts) {
-                performPendingWork(swapContext.pendingWork, cmdbuffer);
+                performPendingWork(swapContext.pendingWork, work.cmdbuffer);
             }
         }
-        performPendingWork(context.pendingWork, cmdbuffer);
-        vkEndCommandBuffer(cmdbuffer);
-        vkQueueSubmit(context.graphicsQueue, 1, &submitInfo, fence);
-        vkWaitForFences(context.device, 1, &fence, VK_FALSE, UINT64_MAX);
-        vkResetFences(context.device, 1, &fence);
-        vkResetCommandBuffer(cmdbuffer, 0);
+        performPendingWork(context.pendingWork, work.cmdbuffer);
+        vkEndCommandBuffer(work.cmdbuffer);
+        vkQueueSubmit(context.graphicsQueue, 1, &submitInfo, work.fence);
+        vkWaitForFences(context.device, 1, &work.fence, VK_FALSE, UINT64_MAX);
+        vkResetFences(context.device, 1, &work.fence);
+        vkResetCommandBuffer(work.cmdbuffer, 0);
     }
-    vkFreeCommandBuffers(context.device, context.commandPool, 1, &cmdbuffer);
-    vkDestroyFence(context.device, fence, VKALLOC);
 }
 
 void acquireCommandBuffer(VulkanContext& context) {
@@ -902,31 +784,6 @@ void acquireCommandBuffer(VulkanContext& context) {
     ASSERT_POSTCONDITION(not error, "vkBeginCommandBuffer error.");
     context.cmdbuffer = cmdbuffer;
     swap.submitted = false;
-}
-
-void releaseCommandBuffer(VulkanContext& context) {
-    // Finalize the command buffer and set the cmdbuffer pointer to null.
-    VkResult result = vkEndCommandBuffer(context.cmdbuffer);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkEndCommandBuffer error.");
-    context.cmdbuffer = nullptr;
-
-    // Submit the command buffer.
-    VkPipelineStageFlags waitDestStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    VulkanSurfaceContext& surfaceContext = *context.currentSurface;
-    SwapContext& swapContext = getSwapContext(context);
-    VkSubmitInfo submitInfo {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .waitSemaphoreCount = 1u,
-        .pWaitSemaphores = &surfaceContext.imageAvailable,
-        .pWaitDstStageMask = &waitDestStageMask,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &swapContext.cmdbuffer,
-        .signalSemaphoreCount = 1u,
-        .pSignalSemaphores = &surfaceContext.renderingFinished,
-    };
-    result = vkQueueSubmit(context.graphicsQueue, 1, &submitInfo, swapContext.fence);
-    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkQueueSubmit error.");
-    swapContext.submitted = true;
 }
 
 void performPendingWork(VulkanTaskQueue& work, VkCommandBuffer cmdbuf) {

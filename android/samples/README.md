@@ -46,9 +46,6 @@ host machine:
 
 ![Material Builder](../../docs/images/samples/sample_image_based_lighting.jpg)
 
-The `material-builder` sample requires the `filamat` static library which can be compiled by adding
-the `-l` flag to the `./build.sh` command.
-
 ## Prerequisites
 
 Before you start, make sure to read [Filament's README](../../README.md). You need to be able to

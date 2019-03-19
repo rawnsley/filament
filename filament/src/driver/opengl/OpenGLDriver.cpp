@@ -1083,6 +1083,7 @@ void OpenGLDriver::framebufferTexture(Driver::TargetBufferInfo& binfo,
                 // we shouldn't be here
                 break;
         }
+        CHECK_GL_ERROR(utils::slog.e)
     } else
 #if GLES31_HEADERS
     if (ext.EXT_multisampled_render_to_texture && t->depth <= 1) {
@@ -1118,6 +1119,8 @@ void OpenGLDriver::framebufferTexture(Driver::TargetBufferInfo& binfo,
                 // we shouldn't be here
                 break;
         }
+
+        CHECK_GL_ERROR(utils::slog.e)
 
         switch (attachment) {
             case GL_COLOR_ATTACHMENT0:
@@ -2877,7 +2880,7 @@ void OpenGLDriver::blit(TargetBufferFlags buffers,
     if (mask) {
         GLRenderTarget const* s = handle_cast<GLRenderTarget const*>(src);
         GLRenderTarget const* d = handle_cast<GLRenderTarget const*>(dst);
-        bindFramebuffer(GL_READ_FRAMEBUFFER, s->gl.fbo);
+        bindFramebuffer(GL_READ_FRAMEBUFFER, s->gl.fbo_draw ? s->gl.fbo_draw : s->gl.fbo);
         bindFramebuffer(GL_DRAW_FRAMEBUFFER, d->gl.fbo);
         disable(GL_SCISSOR_TEST);
         glBlitFramebuffer(
