@@ -182,7 +182,7 @@ Driver* PlatformEGL::createDriver(void* sharedContext) noexcept {
             EGL_RECORDABLE_ANDROID, 1,
             EGL_DEPTH_SIZE, 24,
             EGL_SAMPLE_BUFFERS, 1,
-            EGL_SAMPLES, 2,
+            EGL_SAMPLES, 4,
             EGL_NONE
     };
 
@@ -286,6 +286,24 @@ Driver* PlatformEGL::createDriver(void* sharedContext) noexcept {
         goto error;
     }
 
+    EGLint attributeValue;
+
+    slog.i << "mEGLConfig" << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLConfig, EGL_RED_SIZE, &attributeValue);       slog.i << "EGL_RED_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLConfig, EGL_GREEN_SIZE, &attributeValue);     slog.i << "EGL_GREEN_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLConfig, EGL_BLUE_SIZE, &attributeValue);      slog.i << "EGL_BLUE_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLConfig, EGL_DEPTH_SIZE, &attributeValue);     slog.i << "EGL_DEPTH_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLConfig, EGL_SAMPLE_BUFFERS, &attributeValue); slog.i << "EGL_SAMPLE_BUFFERS = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLConfig, EGL_SAMPLES, &attributeValue);        slog.i << "EGL_SAMPLES = " << attributeValue << io::endl;
+    
+    slog.i << "mEGLTransparentConfig" << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_RED_SIZE, &attributeValue);       slog.i << "EGL_RED_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_GREEN_SIZE, &attributeValue);     slog.i << "EGL_GREEN_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_BLUE_SIZE, &attributeValue);      slog.i << "EGL_BLUE_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_DEPTH_SIZE, &attributeValue);     slog.i << "EGL_DEPTH_SIZE = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_SAMPLE_BUFFERS, &attributeValue); slog.i << "EGL_SAMPLE_BUFFERS = " << attributeValue << io::endl;
+    eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_SAMPLES, &attributeValue);        slog.i << "EGL_SAMPLES = " << attributeValue << io::endl;
+    
     // success!!
     return OpenGLDriver::create(this, sharedContext);
 
