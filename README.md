@@ -128,6 +128,7 @@ and tools.
   - `filameshio`:          Tiny filamesh parsing library (see also `tools/filamesh`)
   - `geometry`:            Mesh-related utilities
   - `gltfio`:              Loader for glTF 2.0
+  - `ibl`:                 IBL generation tools
   - `image`:               Image filtering and simple transforms
   - `imageio`:             Image file reading / writing, only intended for internal use
   - `math`:                Math library
@@ -730,7 +731,7 @@ value is the desired roughness between 0 and 1.
 ### Native Linux, macOS and Windows
 
 You must create an `Engine`, a `Renderer` and a `SwapChain`. The `SwapChain` is created from a
-native window pointer (an `NSView` on macOS or a `HDC` on Windows for instance):
+native window pointer (an `NSView` on macOS or a `HWND` on Windows for instance):
 
 ```c++
 Engine* engine = Engine::create();

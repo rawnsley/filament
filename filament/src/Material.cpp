@@ -18,11 +18,12 @@
 
 #include "details/Engine.h"
 #include "details/DFG.h"
-#include "driver/Program.h"
+
+#include "private/backend/Program.h"
 
 #include "FilamentAPI-impl.h"
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <private/filament/SibGenerator.h>
 #include <private/filament/UibGenerator.h>
@@ -43,7 +44,7 @@ using namespace filaflat;
 namespace filament {
 
 using namespace details;
-using namespace driver;
+using namespace backend;
 
 
 struct Material::BuilderDetails {
@@ -92,15 +93,15 @@ Material* Material::Builder::build(Engine& engine) {
     utils::bitset32 shaderModels;
     shaderModels.setValue(v);
 
-    driver::ShaderModel shaderModel = upcast(engine).getDriver().getShaderModel();
+    backend::ShaderModel shaderModel = upcast(engine).getDriver().getShaderModel();
     if (!shaderModels.test(static_cast<uint32_t>(shaderModel))) {
         CString name;
         materialParser->getName(&name);
         slog.e << "The material '" << name.c_str_safe() << "' was not built for ";
         switch (shaderModel) {
-            case driver::ShaderModel::GL_ES_30: slog.e << "mobile.\n"; break;
-            case driver::ShaderModel::GL_CORE_41: slog.e << "desktop.\n"; break;
-            case driver::ShaderModel::UNKNOWN: /* should never happen */ break;
+            case backend::ShaderModel::GL_ES_30: slog.e << "mobile.\n"; break;
+            case backend::ShaderModel::GL_CORE_41: slog.e << "desktop.\n"; break;
+            case backend::ShaderModel::UNKNOWN: /* should never happen */ break;
         }
         slog.e << "Compiled material contains shader models 0x"
                 << io::hex << shaderModels.getValue() << io::dec << "." << io::endl;
@@ -131,8 +132,7 @@ FMaterial::FMaterial(FEngine& engine, const Material::Builder& builder)
     assert(uibOK);
 
     // Populate sampler bindings for the backend that will consume this Material.
-    const uint8_t offset = getSamplerBindingsStart(engine.getBackend());
-    mSamplerBindings.populate(offset, &mSamplerInterfaceBlock);
+    mSamplerBindings.populate(&mSamplerInterfaceBlock);
 
     parser->getShading(&mShading);
     parser->getBlendingMode(&mBlendingMode);
@@ -159,8 +159,8 @@ FMaterial::FMaterial(FEngine& engine, const Material::Builder& builder)
     mIsVariantLit = mShading != Shading::UNLIT || mHasShadowMultiplier;
 
     // create raster state
-    using BlendFunction = Driver::RasterState::BlendFunction;
-    using DepthFunc = Driver::RasterState::DepthFunc;
+    using BlendFunction = RasterState::BlendFunction;
+    using DepthFunc = RasterState::DepthFunc;
     switch (mBlendingMode) {
         case BlendingMode::OPAQUE:
         case BlendingMode::MASKED:
@@ -278,7 +278,7 @@ bool FMaterial::hasParameter(const char* name) const noexcept {
     return true;
 }
 
-Handle<HwProgram> FMaterial::getProgramSlow(uint8_t variantKey) const noexcept {
+backend::Handle<backend::HwProgram> FMaterial::getProgramSlow(uint8_t variantKey) const noexcept {
     const ShaderModel sm = mEngine.getDriver().getShaderModel();
 
     assert(!Variant::isReserved(variantKey));

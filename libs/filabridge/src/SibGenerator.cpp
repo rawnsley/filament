@@ -16,9 +16,8 @@
 
 #include "private/filament/SibGenerator.h"
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
-#include <private/filament/EngineEnums.h>
 #include <private/filament/SamplerInterfaceBlock.h>
 
 namespace filament {
@@ -52,6 +51,7 @@ SamplerInterfaceBlock const & SibGenerator::getPostProcessSib() noexcept {
     static SamplerInterfaceBlock sib = SamplerInterfaceBlock::Builder()
             .name("PostProcess")
             .add("colorBuffer", Type::SAMPLER_2D, Format::FLOAT, Precision::MEDIUM, false)
+            .add("depthBuffer", Type::SAMPLER_2D, Format::FLOAT, Precision::MEDIUM, false)
             .build();
 
     assert(sib.getSize() == PostProcessSib::SAMPLER_COUNT);

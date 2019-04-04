@@ -19,11 +19,11 @@
 
 #include "UniformBuffer.h"
 
-#include "driver/DriverApiForward.h"
+#include "private/backend/DriverApiForward.h"
 
 #include "fg/FrameGraphResource.h"
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 namespace filament {
 
@@ -35,31 +35,29 @@ class FView;
 class PostProcessManager {
 public:
     void init(details::FEngine& engine) noexcept;
-    void terminate(driver::DriverApi& driver) noexcept;
-    void setSource(uint32_t viewportWidth, uint32_t viewportHeight, Handle<HwTexture> texture,
+    void terminate(backend::DriverApi& driver) noexcept;
+    void setSource(uint32_t viewportWidth, uint32_t viewportHeight,
+            backend::Handle<backend::HwTexture> color,
+            backend::Handle<backend::HwTexture> depth,
             uint32_t textureWidth, uint32_t textureHeight) const noexcept;
 
-    void setDithering(bool dithering) noexcept { mDithering = dithering; }
-
-    FrameGraphResource toneMapping(
-            FrameGraph& fg, FrameGraphResource input, driver::TextureFormat outFormat,
-            bool translucent) noexcept;
+    FrameGraphResource toneMapping(FrameGraph& fg, FrameGraphResource input,
+            backend::TextureFormat outFormat, bool dithering, bool translucent) noexcept;
 
     FrameGraphResource fxaa(
-            FrameGraph& fg, FrameGraphResource input, driver::TextureFormat outFormat,
+            FrameGraph& fg, FrameGraphResource input, backend::TextureFormat outFormat,
             bool translucent) noexcept;
 
     FrameGraphResource dynamicScaling(
-            FrameGraph& fg, FrameGraphResource input, driver::TextureFormat outFormat) noexcept;
+            FrameGraph& fg, FrameGraphResource input, backend::TextureFormat outFormat) noexcept;
 
 private:
     details::FEngine* mEngine = nullptr;
 
     // we need only one of these
     mutable UniformBuffer mPostProcessUb;
-    Handle<HwSamplerGroup> mPostProcessSbh;
-    Handle<HwUniformBuffer> mPostProcessUbh;
-    bool mDithering = true;
+    backend::Handle<backend::HwSamplerGroup> mPostProcessSbh;
+    backend::Handle<backend::HwUniformBuffer> mPostProcessUbh;
 };
 
 } // namespace filament

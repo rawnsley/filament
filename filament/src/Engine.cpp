@@ -31,7 +31,8 @@
 #include "details/SwapChain.h"
 #include "details/Texture.h"
 #include "details/View.h"
-#include "driver/Program.h"
+
+#include "private/backend/Program.h"
 
 #include <private/filament/SibGenerator.h>
 
@@ -39,6 +40,7 @@
 #include <filament/MaterialEnums.h>
 
 #include <MaterialParser.h>
+
 #include <filaflat/ShaderBuilder.h>
 
 #include <utils/compiler.h>
@@ -61,7 +63,7 @@ using namespace utils;
 
 namespace filament {
 
-using namespace driver;
+using namespace backend;
 using namespace filaflat;
 
 namespace details {
@@ -85,8 +87,9 @@ FEngine* FEngine::create(Backend backend, Platform* platform, void* sharedGLCont
         // we don't own the external context at that point, set it to null
         instance->mPlatform = nullptr;
         if (platform == nullptr) {
-            platform = Platform::create(&instance->mBackend);
+            platform = DefaultPlatform::create(&instance->mBackend);
             instance->mPlatform = platform;
+            instance->mOwnPlatform = true;
         }
         instance->mDriver = platform->createDriver(sharedGLContext);
         instance->init();
@@ -188,7 +191,7 @@ void FEngine::init() {
     driverApi.setRenderPrimitiveBuffer(mFullScreenTriangleRph,
             mFullScreenTriangleVb->getHwHandle(), mFullScreenTriangleIb->getHwHandle(),
             mFullScreenTriangleVb->getDeclaredAttributes().getValue());
-    driverApi.setRenderPrimitiveRange(mFullScreenTriangleRph, Driver::PrimitiveType::TRIANGLES,
+    driverApi.setRenderPrimitiveRange(mFullScreenTriangleRph, PrimitiveType::TRIANGLES,
             0, 0, 2, (uint32_t)mFullScreenTriangleIb->getIndexCount());
 
     mDefaultIblTexture = upcast(Texture::Builder()
@@ -226,7 +229,9 @@ void FEngine::init() {
 FEngine::~FEngine() noexcept {
     ASSERT_DESTRUCTOR(mTerminated, "Engine destroyed but not terminated!");
     delete mDriver;
-    Platform::destroy(&mPlatform);
+    if (mOwnPlatform) {
+        DefaultPlatform::destroy((DefaultPlatform**)&mPlatform);
+    }
 }
 
 void FEngine::shutdown() {
@@ -359,19 +364,24 @@ int FEngine::loop() {
     mPlatform = nullptr;
 
     if (platform == nullptr) {
-        platform = Platform::create(&mBackend);
+        platform = DefaultPlatform::create(&mBackend);
         mPlatform = platform;
+        mOwnPlatform = true;
         slog.d << "FEngine resolved backend: ";
         switch (mBackend) {
-            case driver::Backend::OPENGL:
+            case backend::Backend::NOOP:
+                slog.d << "Noop";
+                break;
+
+            case backend::Backend::OPENGL:
                 slog.d << "OpenGL";
                 break;
 
-            case driver::Backend::VULKAN:
+            case backend::Backend::VULKAN:
                 slog.d << "Vulkan";
                 break;
 
-            case driver::Backend::METAL:
+            case backend::Backend::METAL:
                 slog.d << "Metal";
                 break;
 
@@ -427,7 +437,7 @@ const FMaterial* FEngine::getSkyboxMaterial(bool rgbm) const noexcept {
 }
 
 
-Handle<HwProgram> FEngine::createPostProcessProgram(MaterialParser& parser,
+backend::Handle<backend::HwProgram> FEngine::createPostProcessProgram(MaterialParser& parser,
         ShaderModel shaderModel, PostProcessStage stage) const noexcept {
     ShaderBuilder& vShaderBuilder = getVertexShaderBuilder();
     ShaderBuilder& fShaderBuilder = getFragmentShaderBuilder();
@@ -438,10 +448,9 @@ Handle<HwProgram> FEngine::createPostProcessProgram(MaterialParser& parser,
     // need to populate a SamplerBindingMap and pass a weak reference to Program. Binding maps are
     // normally owned by Material, but in this case we'll simply own a copy right here in static
     // storage.
-    static const SamplerBindingMap* pBindings = [backend = this->mBackend] {
+    static const SamplerBindingMap* pBindings = [] {
         static SamplerBindingMap bindings;
-        uint8_t offset = filament::getSamplerBindingsStart(backend);
-        bindings.populate(offset);
+        bindings.populate();
         return &bindings;
     }();
 
@@ -477,8 +486,8 @@ Handle<HwProgram> FEngine::createPostProcessProgram(MaterialParser& parser,
     return program;
 }
 
-Handle<HwProgram> FEngine::getPostProcessProgramSlow(PostProcessStage stage) const noexcept {
-    Handle<HwProgram>* const postProcessPrograms = mPostProcessPrograms;
+backend::Handle<backend::HwProgram> FEngine::getPostProcessProgramSlow(PostProcessStage stage) const noexcept {
+    backend::Handle<backend::HwProgram>* const postProcessPrograms = mPostProcessPrograms;
     if (!postProcessPrograms[(uint8_t)stage]) {
         ShaderModel shaderModel = getDriver().getShaderModel();
         postProcessPrograms[(uint8_t)stage] = createPostProcessProgram(*mPostProcessParser, shaderModel, stage);

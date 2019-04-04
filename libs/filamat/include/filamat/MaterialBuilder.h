@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 #include <filament/MaterialEnums.h>
 
 #include <filamat/Package.h>
@@ -54,6 +54,11 @@ public:
         METAL
     };
 
+    enum class TargetLanguage {
+        GLSL,
+        SPIRV
+    };
+
     enum class Optimization {
         NONE,
         PREPROCESSOR,
@@ -72,7 +77,7 @@ protected:
     // Looks at platform and target API, then decides on shader models and output formats.
     void prepare();
 
-    using ShaderModel = filament::driver::ShaderModel;
+    using ShaderModel = filament::backend::ShaderModel;
     Platform mPlatform = Platform::DESKTOP;
     TargetApi mTargetApi = TargetApi::OPENGL;
     Optimization mOptimization = Optimization::PERFORMANCE;
@@ -81,7 +86,7 @@ protected:
     struct CodeGenParams {
         int shaderModel;
         TargetApi targetApi;
-        TargetApi codeGenTargetApi;
+        TargetLanguage targetLanguage;
     };
     std::vector<CodeGenParams> mCodeGenPermutations;
     uint8_t mVariantFilter = 0;
@@ -106,7 +111,7 @@ public:
         // when adding more variables, make sure to update MATERIAL_VARIABLES_COUNT
     };
 
-    static constexpr size_t MATERIAL_PROPERTIES_COUNT = 16;
+    static constexpr size_t MATERIAL_PROPERTIES_COUNT = 17;
     enum class Property : uint8_t {
         BASE_COLOR,              // float4, all shading models
         ROUGHNESS,               // float,  lit shading models only
@@ -124,6 +129,7 @@ public:
         SHEEN_COLOR,             // float3, cloth shading model only
         EMISSIVE,                // float4, all shading models
         NORMAL,                  // float3, all shading models only, except unlit
+        POST_LIGHTING_COLOR,     // float4, all shading models
         // when adding new Properties, make sure to update MATERIAL_PROPERTIES_COUNT
     };
 
@@ -133,11 +139,11 @@ public:
     using VertexDomain = filament::VertexDomain;
     using TransparencyMode = filament::TransparencyMode;
 
-    using UniformType = filament::driver::UniformType;
-    using SamplerType = filament::driver::SamplerType;
-    using SamplerFormat = filament::driver::SamplerFormat;
-    using SamplerPrecision = filament::driver::Precision;
-    using CullingMode = filament::driver::CullingMode;
+    using UniformType = filament::backend::UniformType;
+    using SamplerType = filament::backend::SamplerType;
+    using SamplerFormat = filament::backend::SamplerFormat;
+    using SamplerPrecision = filament::backend::Precision;
+    using CullingMode = filament::backend::CullingMode;
 
     // set name of this material
     MaterialBuilder& name(const char* name) noexcept;
@@ -182,6 +188,11 @@ public:
 
     // set blending mode for this material
     MaterialBuilder& blending(BlendingMode blending) noexcept;
+
+    // set blending mode of the post lighting color for this material
+    // only OPAQUE, TRANSPARENT and ADD are supported, the default is TRANSPARENT
+    // this setting requires the material property "postLightingColor" to be set
+    MaterialBuilder& postLightingBlending(BlendingMode blending) noexcept;
 
     // set vertex domain for this material
     MaterialBuilder& vertexDomain(VertexDomain domain) noexcept;
@@ -278,8 +289,8 @@ public:
     // Preview the first shader that would generated in the MaterialPackage.
     // This is used to run Static Code Analysis before generating a package.
     // Outputs the chosen shader model in the model parameter
-    const std::string peek(filament::driver::ShaderType type,
-            filament::driver::ShaderModel& model, const PropertyList& properties) noexcept;
+    const std::string peek(filament::backend::ShaderType type,
+            filament::backend::ShaderModel& model, const PropertyList& properties) noexcept;
 
     // Returns true if any of the parameter samplers is of type samplerExternal
     bool hasExternalSampler() const noexcept;
@@ -316,6 +327,7 @@ private:
     VariableList mVariables;
 
     BlendingMode mBlendingMode = BlendingMode::OPAQUE;
+    BlendingMode mPostLightingBlendingMode = BlendingMode::TRANSPARENT;
     CullingMode mCullingMode = CullingMode::BACK;
     Shading mShading = Shading::LIT;
     Interpolation mInterpolation = Interpolation::SMOOTH;

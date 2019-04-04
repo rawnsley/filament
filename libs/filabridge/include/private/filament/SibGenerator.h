@@ -18,7 +18,7 @@
 #define TNT_FILABRIDGE_SIBGENERATOR_H
 
 #include <private/filament/EngineEnums.h>
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <stdint.h>
 #include <stddef.h>
@@ -35,7 +35,7 @@ public:
 };
 
 struct PerViewSib {
-    // indices of each samplers in this SamplerInterfaceBlock (see: getSib())
+    // indices of each samplers in this SamplerInterfaceBlock (see: getPerViewSib())
     static constexpr size_t SHADOW_MAP     = 0;
     static constexpr size_t RECORDS        = 1;
     static constexpr size_t FROXELS        = 2;
@@ -46,27 +46,12 @@ struct PerViewSib {
 };
 
 struct PostProcessSib {
-    // indices of each samplers in this SamplerInterfaceBlock (see: getSib())
+    // indices of each samplers in this SamplerInterfaceBlock (see: getPostProcessSib())
     static constexpr size_t COLOR_BUFFER   = 0;
+    static constexpr size_t DEPTH_BUFFER   = 1;
 
-    static constexpr size_t SAMPLER_COUNT = 1;
+    static constexpr size_t SAMPLER_COUNT = 2;
 };
-
-// Returns the binding point of the first sampler for the given backend API.
-inline constexpr uint8_t getSamplerBindingsStart(driver::Backend api) noexcept {
-    switch (api) {
-        default:
-        case driver::Backend::VULKAN:
-            // The Vulkan backend has single namespace for uniforms and samplers.
-            // To avoid collision, the sampler bindings start after the last UBO binding.
-            return filament::BindingPoints::COUNT;
-
-        case driver::Backend::OPENGL:
-        case driver::Backend::METAL:
-            // Metal has a separate namespace for uniforms and samplers- collisions aren't an issue.
-            return 0;
-    }
-}
 
 }
 #endif // TNT_FILABRIDGE_SIBGENERATOR_H

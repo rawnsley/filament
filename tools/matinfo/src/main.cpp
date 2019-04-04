@@ -26,9 +26,7 @@
 #include <filament/MaterialChunkType.h>
 #include <filament/MaterialEnums.h>
 
-#include <filament/driver/DriverEnums.h>
-
-#include <private/filament/EngineEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/Path.h>
 
@@ -42,7 +40,7 @@
 using namespace filaflat;
 using namespace filamat;
 using namespace filament;
-using namespace driver;
+using namespace backend;
 using namespace utils;
 
 static const int alignment = 24;

@@ -26,7 +26,7 @@
 namespace filament {
 
 using namespace details;
-using namespace driver;
+using namespace backend;
 
 struct Texture::BuilderDetails {
     uint32_t mWidth = 1;
@@ -175,7 +175,7 @@ void FTexture::setExternalStream(FEngine& engine, FStream* stream) noexcept {
         engine.getDriverApi().setExternalStream(mHandle, stream->getHandle());
     } else {
         mStream = nullptr;
-        engine.getDriverApi().setExternalStream(mHandle, Handle<HwStream>());
+        engine.getDriverApi().setExternalStream(mHandle, backend::Handle<backend::HwStream>());
     }
 }
 
@@ -215,11 +215,11 @@ void FTexture::generateMipmaps(FEngine& engine) const noexcept {
         uint8_t level = 0;
         uint32_t srcw = mWidth;
         uint32_t srch = mHeight;
-        Driver::RenderTargetHandle srcrth = driver.createRenderTarget(TargetBufferFlags::COLOR,
+        backend::Handle<backend::HwRenderTarget> srcrth = driver.createRenderTarget(TargetBufferFlags::COLOR,
                 srcw, srch, mSampleCount, mFormat, { mHandle, level++, layer }, {}, {});
 
         // Perform a blit for all miplevels down to 1x1.
-        Driver::RenderTargetHandle dstrth;
+        backend::Handle<backend::HwRenderTarget> dstrth;
         do {
             uint32_t dstw = std::max(srcw >> 1, 1u);
             uint32_t dsth = std::max(srch >> 1, 1u);
@@ -227,7 +227,8 @@ void FTexture::generateMipmaps(FEngine& engine) const noexcept {
                     mFormat, { mHandle, level++, layer }, {}, {});
             driver.blit(TargetBufferFlags::COLOR,
                     dstrth, { 0, 0, dstw, dsth },
-                    srcrth, { 0, 0, srcw, srch });
+                    srcrth, { 0, 0, srcw, srch },
+                    SamplerMagFilter::LINEAR);
             driver.destroyRenderTarget(srcrth);
             srcrth = dstrth;
             srcw = dstw;

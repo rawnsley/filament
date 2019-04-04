@@ -34,7 +34,7 @@
 
 #include <vector>
 
-using namespace filament::driver;
+using namespace filament::backend;
 
 namespace filamat {
 
@@ -64,14 +64,12 @@ Package PostprocessMaterialBuilder::build() {
     for (const auto& params : mCodeGenPermutations) {
         const ShaderModel shaderModel = ShaderModel(params.shaderModel);
         const TargetApi targetApi = params.targetApi;
-        const TargetApi codeGenTargetApi = params.codeGenTargetApi;
+        const TargetLanguage targetLanguage = params.targetLanguage;
 
         // Populate a SamplerBindingMap for the sole purpose of finding where the post-process bindings
         // live within the global namespace of samplers.
         filament::SamplerBindingMap samplerBindingMap;
-        auto backend = static_cast<filament::driver::Backend>(params.targetApi);
-        uint8_t offset = filament::getSamplerBindingsStart(backend);
-        samplerBindingMap.populate(offset);
+        samplerBindingMap.populate();
         const uint8_t firstSampler =
                 samplerBindingMap.getBlockOffset(filament::BindingPoints::POST_PROCESS);
 
@@ -97,10 +95,10 @@ Package PostprocessMaterialBuilder::build() {
 
             // Vertex Shader
             std::string vs = ShaderPostProcessGenerator::createPostProcessVertexProgram(
-                    shaderModel, targetApi, codeGenTargetApi,
+                    shaderModel, targetApi, targetLanguage,
                     filament::PostProcessStage(k), firstSampler);
 
-            bool ok = postProcessor.process(vs, filament::driver::ShaderType::VERTEX, shaderModel,
+            bool ok = postProcessor.process(vs, filament::backend::ShaderType::VERTEX, shaderModel,
                     &vs, pSpirv, pMsl);
             if (!ok) {
                 // An error occured while postProcessing, aborting.
@@ -109,7 +107,7 @@ Package PostprocessMaterialBuilder::build() {
             }
 
             if (targetApi == TargetApi::OPENGL) {
-                glslEntry.stage = filament::driver::ShaderType::VERTEX;
+                glslEntry.stage = filament::backend::ShaderType::VERTEX;
                 glslEntry.shaderSize = vs.size();
                 glslEntry.shader = (char*)malloc(glslEntry.shaderSize + 1);
                 strcpy(glslEntry.shader, vs.c_str());
@@ -118,7 +116,7 @@ Package PostprocessMaterialBuilder::build() {
             }
 
             if (targetApi == TargetApi::VULKAN) {
-                spirvEntry.stage = filament::driver::ShaderType::VERTEX;
+                spirvEntry.stage = filament::backend::ShaderType::VERTEX;
                 spirvEntry.dictionaryIndex = spirvDictionary.addBlob(spirv);
                 spirv.clear();
                 spirvEntries.push_back(spirvEntry);
@@ -126,7 +124,7 @@ Package PostprocessMaterialBuilder::build() {
             if (targetApi == TargetApi::METAL) {
                 assert(spirv.size() > 0);
                 assert(msl.length() > 0);
-                metalEntry.stage = filament::driver::ShaderType::VERTEX;
+                metalEntry.stage = filament::backend::ShaderType::VERTEX;
                 metalEntry.shaderSize = msl.length();
                 metalEntry.shader = (char*)malloc(metalEntry.shaderSize + 1);
                 strcpy(metalEntry.shader, msl.c_str());
@@ -138,10 +136,10 @@ Package PostprocessMaterialBuilder::build() {
 
             // Fragment Shader
             std::string fs = ShaderPostProcessGenerator::createPostProcessFragmentProgram(
-                    shaderModel, targetApi, codeGenTargetApi,
+                    shaderModel, targetApi, targetLanguage,
                     filament::PostProcessStage(k), firstSampler);
 
-            ok = postProcessor.process(fs, filament::driver::ShaderType::FRAGMENT, shaderModel, &fs,
+            ok = postProcessor.process(fs, filament::backend::ShaderType::FRAGMENT, shaderModel, &fs,
                     pSpirv, pMsl);
             if (!ok) {
                 // An error occured while postProcessing, aborting.
@@ -150,7 +148,7 @@ Package PostprocessMaterialBuilder::build() {
             }
 
             if (targetApi == TargetApi::OPENGL) {
-                glslEntry.stage = filament::driver::ShaderType::FRAGMENT;
+                glslEntry.stage = filament::backend::ShaderType::FRAGMENT;
                 glslEntry.shaderSize = fs.size();
                 glslEntry.shader = (char*) malloc(glslEntry.shaderSize + 1);
                 strcpy(glslEntry.shader, fs.c_str());
@@ -159,7 +157,7 @@ Package PostprocessMaterialBuilder::build() {
             }
 
             if (targetApi == TargetApi::VULKAN) {
-                spirvEntry.stage = filament::driver::ShaderType::FRAGMENT;
+                spirvEntry.stage = filament::backend::ShaderType::FRAGMENT;
                 spirvEntry.dictionaryIndex = spirvDictionary.addBlob(spirv);
                 spirv.clear();
                 spirvEntries.push_back(spirvEntry);
@@ -167,7 +165,7 @@ Package PostprocessMaterialBuilder::build() {
             if (targetApi == TargetApi::METAL) {
                 assert(spirv.size() > 0);
                 assert(msl.length() > 0);
-                metalEntry.stage = filament::driver::ShaderType::FRAGMENT;
+                metalEntry.stage = filament::backend::ShaderType::FRAGMENT;
                 metalEntry.shaderSize = msl.length();
                 metalEntry.shader = (char*)malloc(metalEntry.shaderSize + 1);
                 strcpy(metalEntry.shader, msl.c_str());

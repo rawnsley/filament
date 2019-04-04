@@ -49,7 +49,7 @@ FScene::FScene(FEngine& engine) :
 FScene::~FScene() noexcept = default;
 
 
-void FScene::prepare(const filament::math::mat4f& worldOriginTransform) {
+void FScene::prepare(const mat4f& worldOriginTransform) {
     // TODO: can we skip this in most cases? Since we rely on indices staying the same,
     //       we could only skip, if nothing changed in the RCM.
 
@@ -163,7 +163,7 @@ void FScene::prepare(const filament::math::mat4f& worldOriginTransform) {
     }
 }
 
-void FScene::updateUBOs(utils::Range<uint32_t> visibleRenderables, Handle<HwUniformBuffer> renderableUbh) noexcept {
+void FScene::updateUBOs(utils::Range<uint32_t> visibleRenderables, backend::Handle<backend::HwUniformBuffer> renderableUbh) noexcept {
     FEngine::DriverApi& driver = mEngine.getDriverApi();
     const size_t size = visibleRenderables.size() * sizeof(PerRenderableUib);
 
@@ -199,7 +199,7 @@ void FScene::updateUBOs(utils::Range<uint32_t> visibleRenderables, Handle<HwUnif
 
     // TODO: handle static objects separately
     mRenderableViewUbh = renderableUbh;
-    driver.updateUniformBuffer(renderableUbh, { buffer, size });
+    driver.loadUniformBuffer(renderableUbh, { buffer, size });
 }
 
 void FScene::terminate(FEngine& engine) {
@@ -207,7 +207,7 @@ void FScene::terminate(FEngine& engine) {
     mRenderableViewUbh.clear();
 }
 
-void FScene::prepareDynamicLights(const CameraInfo& camera, ArenaScope& rootArena, Handle<HwUniformBuffer> lightUbh) noexcept {
+void FScene::prepareDynamicLights(const CameraInfo& camera, ArenaScope& rootArena, backend::Handle<backend::HwUniformBuffer> lightUbh) noexcept {
     FEngine::DriverApi& driver = mEngine.getDriverApi();
     FLightManager& lcm = mEngine.getLightManager();
     FScene::LightSoa& lightData = getLightData();
@@ -258,7 +258,7 @@ void FScene::prepareDynamicLights(const CameraInfo& camera, ArenaScope& rootAren
         lp[gpuIndex].spotScaleOffset.xy   = { lcm.getSpotParams(li).scaleOffset };
     }
 
-    driver.updateUniformBuffer(lightUbh, { lp, positionalLightCount * sizeof(LightsUib) });
+    driver.loadUniformBuffer(lightUbh, { lp, positionalLightCount * sizeof(LightsUib) });
 }
 
 // These methods need to exist so clang honors the __restrict__ keyword, which in turn

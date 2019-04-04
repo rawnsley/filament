@@ -46,7 +46,7 @@ using namespace utils;
 
 namespace filament {
 
-using namespace driver;
+using namespace backend;
 
 namespace details {
 
@@ -69,8 +69,8 @@ FView::FView(FEngine& engine)
             &engine.debug.view.camera_at_origin);
 
     // set-up samplers
-    mPerViewSb.setSampler(PerViewSib::RECORDS, mFroxelizer.getRecordBuffer());
-    mPerViewSb.setSampler(PerViewSib::FROXELS, mFroxelizer.getFroxelBuffer());
+    mFroxelizer.getRecordBuffer().setSampler(PerViewSib::RECORDS, mPerViewSb);
+    mFroxelizer.getFroxelBuffer().setSampler(PerViewSib::FROXELS, mPerViewSb);
     if (engine.getDFG()->isValid()) {
         TextureSampler sampler(TextureSampler::MagFilter::LINEAR);
         mPerViewSb.setSampler(PerViewSib::IBL_DFG_LUT,
@@ -79,8 +79,8 @@ FView::FView(FEngine& engine)
     mPerViewSbh = driver.createSamplerGroup(mPerViewSb.getSize());
 
     // allocate ubos
-    mPerViewUbh = driver.createUniformBuffer(mPerViewUb.getSize(), driver::BufferUsage::DYNAMIC);
-    mLightUbh = driver.createUniformBuffer(CONFIG_MAX_LIGHT_COUNT * sizeof(LightsUib), driver::BufferUsage::DYNAMIC);
+    mPerViewUbh = driver.createUniformBuffer(mPerViewUb.getSize(), backend::BufferUsage::DYNAMIC);
+    mLightUbh = driver.createUniformBuffer(CONFIG_MAX_LIGHT_COUNT * sizeof(LightsUib), backend::BufferUsage::DYNAMIC);
 
     mIsDynamicResolutionSupported = driver.isFrameTimeSupported();
 }
@@ -159,7 +159,7 @@ void move_backward(InputIterator first, InputIterator last, OutputIterator resul
     }
 }
 
-math::float2 FView::updateScale(duration frameTime) noexcept {
+float2 FView::updateScale(duration frameTime) noexcept {
     DynamicResolutionOptions const& options = mDynamicResolution;
     if (options.enabled) {
 
@@ -277,7 +277,7 @@ bool FView::isSkyboxVisible() const noexcept {
     return skybox != nullptr && (skybox->getLayerMask() & mVisibleLayers);
 }
 
-void FView::prepareShadowing(FEngine& engine, driver::DriverApi& driver,
+void FView::prepareShadowing(FEngine& engine, backend::DriverApi& driver,
         FScene::RenderableSoa& renderableData, FScene::LightSoa const& lightData) noexcept {
     SYSTRACE_CALL();
 
@@ -399,8 +399,8 @@ void FView::prepareLighting(FEngine& engine, FEngine::DriverApi& driver, ArenaSc
     }
 }
 
-void FView::prepare(FEngine& engine, driver::DriverApi& driver, ArenaScope& arena,
-        filament::Viewport const& viewport, filament::math::float4 const& userTime) noexcept {
+void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& arena,
+        filament::Viewport const& viewport, float4 const& userTime) noexcept {
     JobSystem& js = engine.getJobSystem();
 
     /*
@@ -540,7 +540,7 @@ void FView::prepare(FEngine& engine, driver::DriverApi& driver, ArenaScope& aren
             mRenderableUBOSize = uint32_t(count * sizeof(PerRenderableUib));
             driver.destroyUniformBuffer(mRenderableUbh);
             mRenderableUbh = driver.createUniformBuffer(mRenderableUBOSize,
-                    driver::BufferUsage::STREAM);
+                    backend::BufferUsage::STREAM);
         } else {
             // TODO: should we shrink the underlying UBO at some point?
         }
@@ -639,9 +639,9 @@ void FView::froxelize(FEngine& engine) const noexcept {
     }
 }
 
-void FView::commitUniforms(driver::DriverApi& driver) const noexcept {
+void FView::commitUniforms(backend::DriverApi& driver) const noexcept {
     if (mPerViewUb.isDirty()) {
-        driver.updateUniformBuffer(mPerViewUbh, mPerViewUb.toBufferDescriptor(driver));
+        driver.loadUniformBuffer(mPerViewUbh, mPerViewUb.toBufferDescriptor(driver));
     }
 
     if (mPerViewSb.isDirty()) {
@@ -649,7 +649,7 @@ void FView::commitUniforms(driver::DriverApi& driver) const noexcept {
     }
 }
 
-void FView::commitFroxels(driver::DriverApi& driverApi) const noexcept {
+void FView::commitFroxels(backend::DriverApi& driverApi) const noexcept {
     if (mHasDynamicLighting) {
         mFroxelizer.commit(driverApi);
     }
@@ -861,6 +861,14 @@ void View::setAntiAliasing(AntiAliasing type) noexcept {
 
 View::AntiAliasing View::getAntiAliasing() const noexcept {
     return upcast(this)->getAntiAliasing();
+}
+
+void View::setToneMapping(ToneMapping type) noexcept {
+    upcast(this)->setToneMapping(type);
+}
+
+View::ToneMapping View::getToneMapping() const noexcept {
+    return upcast(this)->getToneMapping();
 }
 
 void View::setDithering(Dithering dithering) noexcept {

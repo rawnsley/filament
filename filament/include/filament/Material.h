@@ -24,7 +24,7 @@
 #include <filament/Texture.h>
 #include <filament/TextureSampler.h>
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/compiler.h>
 #include <utils/CString.h>
@@ -51,12 +51,12 @@ public:
     using VertexDomain = filament::VertexDomain;
     using TransparencyMode = filament::TransparencyMode;
 
-    using ParameterType = filament::driver::UniformType;
-    using Precision = filament::driver::Precision;
-    using SamplerType = filament::driver::SamplerType;
-    using SamplerFormat = filament::driver::SamplerFormat;
-    using CullingMode = filament::driver::CullingMode;
-    using ShaderModel = filament::driver::ShaderModel;
+    using ParameterType = filament::backend::UniformType;
+    using Precision = filament::backend::Precision;
+    using SamplerType = filament::backend::SamplerType;
+    using SamplerFormat = filament::backend::SamplerFormat;
+    using CullingMode = filament::backend::CullingMode;
+    using ShaderModel = filament::backend::ShaderModel;
 
     /**
      * Holds information about a material parameter.
@@ -222,7 +222,7 @@ public:
      *
      * @see getDefaultInstance()
      */
-    void setDefaultParameter(const char* name, RgbType type, filament::math::float3 color) noexcept {
+    void setDefaultParameter(const char* name, RgbType type, math::float3 color) noexcept {
         getDefaultInstance()->setParameter(name, type, color);
     }
 
@@ -235,7 +235,7 @@ public:
      *
      * @see getDefaultInstance()
      */
-    void setDefaultParameter(const char* name, RgbaType type, filament::math::float4 color) noexcept {
+    void setDefaultParameter(const char* name, RgbaType type, math::float4 color) noexcept {
         getDefaultInstance()->setParameter(name, type, color);
     }
 

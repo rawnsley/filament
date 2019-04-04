@@ -30,7 +30,7 @@ namespace filament {
 
 using namespace utils;
 using namespace math;
-using namespace driver;
+using namespace backend;
 using namespace filament::details;
 
 void PostProcessManager::init(FEngine& engine) noexcept {
@@ -41,40 +41,40 @@ void PostProcessManager::init(FEngine& engine) noexcept {
     DriverApi& driver = engine.getDriverApi();
     mPostProcessSbh = driver.createSamplerGroup(PostProcessSib::SAMPLER_COUNT);
     mPostProcessUbh = driver.createUniformBuffer(mPostProcessUb.getSize(),
-            driver::BufferUsage::DYNAMIC);
+            backend::BufferUsage::DYNAMIC);
     driver.bindSamplers(BindingPoints::POST_PROCESS, mPostProcessSbh);
     driver.bindUniformBuffer(BindingPoints::POST_PROCESS, mPostProcessUbh);
 }
 
-void PostProcessManager::terminate(driver::DriverApi& driver) noexcept {
+void PostProcessManager::terminate(backend::DriverApi& driver) noexcept {
     driver.destroySamplerGroup(mPostProcessSbh);
     driver.destroyUniformBuffer(mPostProcessUbh);
 }
 
 void PostProcessManager::setSource(uint32_t viewportWidth, uint32_t viewportHeight,
-        Handle<HwTexture> texture, uint32_t textureWidth, uint32_t textureHeight) const noexcept {
+        backend::Handle<backend::HwTexture> color,
+        backend::Handle<backend::HwTexture> depth,
+        uint32_t textureWidth, uint32_t textureHeight) const noexcept {
     FEngine& engine = *mEngine;
     DriverApi& driver = engine.getDriverApi();
 
     // FXAA requires linear filtering. The post-processing stage however, doesn't
     // use samplers.
-    driver::SamplerParams params;
+    backend::SamplerParams params;
     params.filterMag = SamplerMagFilter::LINEAR;
     params.filterMin = SamplerMinFilter::LINEAR;
     SamplerGroup group(PostProcessSib::SAMPLER_COUNT);
-    group.setSampler(PostProcessSib::COLOR_BUFFER, texture, params);
+    group.setSampler(PostProcessSib::COLOR_BUFFER, color, params);
+    group.setSampler(PostProcessSib::DEPTH_BUFFER, depth, {});
 
     auto duration = engine.getEngineTime();
     float fraction = (duration.count() % 1000000000) / 1000000000.0f;
 
     float2 uvScale = float2{ viewportWidth, viewportHeight } / float2{ textureWidth, textureHeight };
 
-    int32_t dithering = mDithering;
-
     UniformBuffer& ub = mPostProcessUb;
     ub.setUniform(offsetof(PostProcessingUib, time), fraction);
     ub.setUniform(offsetof(PostProcessingUib, uvScale), uvScale);
-    ub.setUniform(offsetof(PostProcessingUib, dithering), dithering);
 
     // The shader may need to know the offset between the top of the texture and the top
     // of the rectangle that it actually needs to sample from.
@@ -82,22 +82,22 @@ void PostProcessManager::setSource(uint32_t viewportWidth, uint32_t viewportHeig
     ub.setUniform(offsetof(PostProcessingUib, yOffset), yOffset);
 
     driver.updateSamplerGroup(mPostProcessSbh, std::move(group));
-    driver.updateUniformBuffer(mPostProcessUbh, ub.toBufferDescriptor(driver));
+    driver.loadUniformBuffer(mPostProcessUbh, ub.toBufferDescriptor(driver));
 }
 
 // ------------------------------------------------------------------------------------------------
 
-FrameGraphResource PostProcessManager::toneMapping(FrameGraph& fg,
-        FrameGraphResource input, driver::TextureFormat outFormat, bool translucent) noexcept {
+FrameGraphResource PostProcessManager::toneMapping(FrameGraph& fg, FrameGraphResource input,
+        backend::TextureFormat outFormat, bool dithering, bool translucent) noexcept {
 
     FEngine* engine = mEngine;
-    Handle<HwRenderPrimitive> const& fullScreenRenderPrimitive = engine->getFullScreenRenderPrimitive();
+    backend::Handle<backend::HwRenderPrimitive> const& fullScreenRenderPrimitive = engine->getFullScreenRenderPrimitive();
 
     struct PostProcessToneMapping {
         FrameGraphResource input;
         FrameGraphResource output;
     };
-    Handle<HwProgram> toneMappingProgram = engine->getPostProcessProgram(
+    backend::Handle<backend::HwProgram> toneMappingProgram = engine->getPostProcessProgram(
             translucent ? PostProcessStage::TONE_MAPPING_TRANSLUCENT
                         : PostProcessStage::TONE_MAPPING_OPAQUE);
 
@@ -116,20 +116,22 @@ FrameGraphResource PostProcessManager::toneMapping(FrameGraph& fg,
             },
             [=](FrameGraphPassResources const& resources,
                     PostProcessToneMapping const& data, DriverApi& driver) {
-                Driver::PipelineState pipeline;
-                pipeline.rasterState.culling = Driver::RasterState::CullingMode::NONE;
+                PipelineState pipeline;
+                pipeline.rasterState.culling = RasterState::CullingMode::NONE;
                 pipeline.rasterState.colorWrite = true;
-                pipeline.rasterState.depthFunc = Driver::RasterState::DepthFunc::A;
+                pipeline.rasterState.depthFunc = RasterState::DepthFunc::A;
                 pipeline.program = toneMappingProgram;
 
                 auto const& textureDesc = resources.getDescriptor(data.input);
-                auto const& texture = resources.getTexture(data.input);
+                auto const& color = resources.getTexture(data.input);
                 // TODO: the first parameters below are the *actual viewport* size
                 //       (as opposed to the size of the source texture). Currently we don't allow
                 //       the texture to be resized, so they match. We'll need something more
                 //       sofisticated in the future.
+
+                mPostProcessUb.setUniform(offsetof(PostProcessingUib, dithering), dithering);
                 setSource(textureDesc.width, textureDesc.height,
-                        texture, textureDesc.width, textureDesc.height);
+                        color, {}, textureDesc.width, textureDesc.height);
 
                 auto const& target = resources.getRenderTarget(data.output);
                 driver.beginRenderPass(target.target, target.params);
@@ -141,24 +143,23 @@ FrameGraphResource PostProcessManager::toneMapping(FrameGraph& fg,
 }
 
 FrameGraphResource PostProcessManager::fxaa(FrameGraph& fg,
-        FrameGraphResource input, driver::TextureFormat outFormat, bool translucent) noexcept {
+        FrameGraphResource input, backend::TextureFormat outFormat, bool translucent) noexcept {
 
     FEngine* engine = mEngine;
-    Handle<HwRenderPrimitive> const& fullScreenRenderPrimitive = engine->getFullScreenRenderPrimitive();
+    backend::Handle<backend::HwRenderPrimitive> const& fullScreenRenderPrimitive = engine->getFullScreenRenderPrimitive();
 
     struct PostProcessFXAA {
         FrameGraphResource input;
         FrameGraphResource output;
     };
 
-    Handle<HwProgram> antiAliasingProgram = engine->getPostProcessProgram(
+    backend::Handle<backend::HwProgram> antiAliasingProgram = engine->getPostProcessProgram(
             translucent ? PostProcessStage::ANTI_ALIASING_TRANSLUCENT
                         : PostProcessStage::ANTI_ALIASING_OPAQUE);
 
     auto& ppFXAA = fg.addPass<PostProcessFXAA>("fxaa",
             [&](FrameGraph::Builder& builder, PostProcessFXAA& data) {
                 auto* inputDesc = fg.getDescriptor(input);
-                inputDesc->format = TextureFormat::RGBA8;
                 data.input = builder.read(input);
 
                 FrameGraphResource::Descriptor outputDesc{
@@ -171,10 +172,10 @@ FrameGraphResource PostProcessManager::fxaa(FrameGraph& fg,
             },
             [=](FrameGraphPassResources const& resources,
                     PostProcessFXAA const& data, DriverApi& driver) {
-                Driver::PipelineState pipeline;
-                pipeline.rasterState.culling = Driver::RasterState::CullingMode::NONE;
+                PipelineState pipeline;
+                pipeline.rasterState.culling = RasterState::CullingMode::NONE;
                 pipeline.rasterState.colorWrite = true;
-                pipeline.rasterState.depthFunc = Driver::RasterState::DepthFunc::A;
+                pipeline.rasterState.depthFunc = RasterState::DepthFunc::A;
                 pipeline.program = antiAliasingProgram;
 
                 auto const& textureDesc = resources.getDescriptor(data.input);
@@ -184,7 +185,7 @@ FrameGraphResource PostProcessManager::fxaa(FrameGraph& fg,
                 //       the texture to be resized, so they match. We'll need something more
                 //       sofisticated in the future.
                 setSource(textureDesc.width, textureDesc.height,
-                        texture, textureDesc.width, textureDesc.height);
+                        texture, {}, textureDesc.width, textureDesc.height);
 
                 auto const& target = resources.getRenderTarget(data.output);
                 driver.beginRenderPass(target.target, target.params);
@@ -196,7 +197,7 @@ FrameGraphResource PostProcessManager::fxaa(FrameGraph& fg,
 }
 
 FrameGraphResource PostProcessManager::dynamicScaling(FrameGraph& fg,
-        FrameGraphResource input, driver::TextureFormat outFormat) noexcept {
+        FrameGraphResource input, backend::TextureFormat outFormat) noexcept {
 
     struct PostProcessScaling {
         FrameGraphResource input;
@@ -221,7 +222,8 @@ FrameGraphResource PostProcessManager::dynamicScaling(FrameGraph& fg,
                 auto in = resources.getRenderTarget(data.input);
                 auto out = resources.getRenderTarget(data.output);
                 driver.blit(TargetBufferFlags::COLOR,
-                        out.target, out.params.viewport, in.target, in.params.viewport);
+                        out.target, out.params.viewport, in.target, in.params.viewport,
+                        SamplerMagFilter::LINEAR);
             });
 
     return ppScaling.getData().output;

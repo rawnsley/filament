@@ -26,7 +26,7 @@
 #include "FilamentAPI-impl.h"
 
 #include <filament/MaterialInstance.h>
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/Panic.h>
 

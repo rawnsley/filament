@@ -17,13 +17,12 @@
 #include "FrameGraph.h"
 
 #include "FrameGraphPassResources.h"
-
-#include "driver/Driver.h"
-#include "driver/Handle.h"
-#include "driver/CommandStream.h"
 #include "FrameGraphResource.h"
 
-#include <filament/driver/DriverEnums.h>
+#include "private/backend/CommandStream.h"
+
+#include <backend/DriverEnums.h>
+#include <backend/Handle.h>
 
 #include <utils/Panic.h>
 #include <utils/Log.h>
@@ -32,7 +31,7 @@ using namespace utils;
 
 namespace filament {
 
-using namespace driver;
+using namespace backend;
 using namespace fg;
 
 // ------------------------------------------------------------------------------------------------
@@ -88,7 +87,7 @@ struct Resource final : public VirtualResource { // 72
     uint32_t refs = 0;                      // final reference count
 
     // set during execute(), as needed
-    Handle<HwTexture> texture;
+    backend::Handle<backend::HwTexture> texture;
 };
 
 struct ResourceNode { // 24
@@ -152,7 +151,7 @@ struct RenderTargetResource final : public VirtualResource {  // 104
 
                 // devirtualize our texture handles. By this point these handles have been
                 // remapped to their alias if any.
-                Handle<HwTexture> textures[FrameGraphRenderTarget::Attachments::COUNT];
+                backend::Handle<backend::HwTexture> textures[FrameGraphRenderTarget::Attachments::COUNT];
                 for (size_t i = 0, c = desc.attachments.textures.size(); i < c; i++) {
                     FrameGraphResource r = desc.attachments.textures[i];
                     if (r.isValid()) {
@@ -223,7 +222,7 @@ struct RenderTarget { // 32
             uint32_t width = 0;
             uint32_t height = 0;
             TextureFormat colorFormat = {};
-            Handle<HwTexture> textures[FrameGraphRenderTarget::Attachments::COUNT];
+            backend::Handle<backend::HwTexture> textures[FrameGraphRenderTarget::Attachments::COUNT];
 
             static constexpr TargetBufferFlags flags[] = {
                     TargetBufferFlags::COLOR,
@@ -561,7 +560,7 @@ FrameGraphPassResources::FrameGraphPassResources(FrameGraph& fg, fg::PassNode co
         : mFrameGraph(fg), mPass(pass) {
 }
 
-Handle <HwTexture> FrameGraphPassResources::getTexture(FrameGraphResource r) const noexcept {
+backend::Handle<backend::HwTexture> FrameGraphPassResources::getTexture(FrameGraphResource r) const noexcept {
     Resource const* const pResource = mFrameGraph.mResourceNodes[r.index].resource;
     assert(pResource);
 
@@ -751,7 +750,7 @@ bool FrameGraph::equals(FrameGraphRenderTarget::Descriptor const& lhs,
 
 FrameGraphResource FrameGraph::importResource(const char* name,
         FrameGraphRenderTarget::Descriptor descriptor,
-        Handle<HwRenderTarget> target, uint32_t width, uint32_t height,
+        backend::Handle<backend::HwRenderTarget> target, uint32_t width, uint32_t height,
         TargetBufferFlags discardStart, TargetBufferFlags discardEnd) {
 
     // TODO: for now we don't allow imported targets to specify textures
@@ -782,7 +781,7 @@ FrameGraphResource FrameGraph::importResource(const char* name,
 
 FrameGraphResource FrameGraph::importResource(
         const char* name, FrameGraphResource::Descriptor const& descriptor,
-        Handle<HwTexture> color) {
+        backend::Handle<backend::HwTexture> color) {
     Resource* resource = createResource(name, descriptor, true);
     resource->texture = color;
     return createResourceNode(resource);
@@ -850,6 +849,7 @@ FrameGraph& FrameGraph::compile() noexcept {
      */
 
     if (!mAliases.empty()) {
+        Vector<filament::fg::RenderTarget>& renderTargets = mRenderTargets;
         Vector<FrameGraphResource> sratch(mArena); // keep out of loops to avoid reallocations
         for (fg::Alias const& alias : mAliases) {
             // disconnect all writes to "from"
@@ -860,6 +860,25 @@ FrameGraph& FrameGraph::compile() noexcept {
             for (ResourceNode& cur : resourceNodes) {
                 if (cur.resource == to.resource) {
                     cur.resource = from.resource;
+                }
+            }
+
+            // TODO: make this better
+            //  When replacing a resource from an imported render-target, we find all existing
+            //  render-target that used that resource as the color attachment, and we clear
+            //  all other attachments -- we have to do this because the resource aliasing
+            //  must also alias the render targets.
+            //  For instance, if a render-target was declared with a color+depth attachment,
+            //  and the color attachment was aliased with an imported render-target, the
+            //  render-target cache (see: equals()) wouldn't match it (because the depth
+            //  attachment would be missing).
+            for (fg::RenderTarget& rt : renderTargets) {
+                auto& textures = rt.desc.attachments.textures;
+                ResourceNode const& node = resourceNodes[textures[0].index];
+                if (node.resource->imported && node.resource == from.resource) {
+                    for (size_t i = 1; i < textures.size(); ++i) {
+                        textures[i] = {};
+                    }
                 }
             }
 

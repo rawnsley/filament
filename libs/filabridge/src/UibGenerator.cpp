@@ -19,11 +19,11 @@
 #include "private/filament/UniformInterfaceBlock.h"
 
 #include <private/filament/EngineEnums.h>
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 namespace filament {
 
-using namespace driver;
+using namespace backend;
 
 static_assert(sizeof(PerRenderableUib) % 256 == 0,
         "sizeof(Transform) should be a multiple of 256");

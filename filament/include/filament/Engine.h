@@ -21,7 +21,7 @@
 #include <filament/Fence.h>
 #include <filament/SwapChain.h>
 
-#include <filament/driver/Platform.h>
+#include <backend/Platform.h>
 
 #include <utils/compiler.h>
 #include <utils/EntityManager.h>
@@ -142,8 +142,8 @@ class TransformManager;
  */
 class UTILS_PUBLIC Engine {
 public:
-    using Platform = driver::Platform;
-    using Backend = driver::Backend;
+    using Platform = backend::Platform;
+    using Backend = backend::Backend;
 
     /**
      * Creates an instance of Engine

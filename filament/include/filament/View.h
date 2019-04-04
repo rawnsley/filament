@@ -24,7 +24,7 @@
 #include <filament/Viewport.h>
 #include <filament/FilamentAPI.h>
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/compiler.h>
 
@@ -60,7 +60,7 @@ class Scene;
  */
 class UTILS_PUBLIC View : public FilamentAPI {
 public:
-    using TargetBufferFlags = driver::TargetBufferFlags;
+    using TargetBufferFlags = backend::TargetBufferFlags;
 
     /**
      * Dynamic resolution can be used to either reach a desired target frame rate
@@ -97,7 +97,7 @@ public:
         DynamicResolutionOptions() = default;
 
         DynamicResolutionOptions(bool enabled, float scaleRate,
-                filament::math::float2 minScale, filament::math::float2 maxScale)
+                math::float2 minScale, math::float2 maxScale)
                 : minScale(minScale), maxScale(maxScale),
                   scaleRate(scaleRate), enabled(enabled) {
             // this one exists for backward compatibility
@@ -105,8 +105,8 @@ public:
 
         explicit DynamicResolutionOptions(bool enabled) : enabled(enabled) { }
 
-        filament::math::float2 minScale = filament::math::float2(0.5f);     //!< minimum scale factors in x and y
-        filament::math::float2 maxScale = filament::math::float2(1.0f);     //!< maximum scale factors in x and y
+        math::float2 minScale = math::float2(0.5f);     //!< minimum scale factors in x and y
+        math::float2 maxScale = math::float2(1.0f);     //!< maximum scale factors in x and y
         float scaleRate = 0.125f;                       //!< rate at which the scale will change
         float targetFrameTimeMilli = 1000.0f / 60.0f;   //!< desired frame time, or budget.
         float headRoomRatio = 0.0f;                     //!< additional headroom for the GPU
@@ -161,6 +161,14 @@ public:
     enum class Dithering : uint8_t {
         NONE = 0,       //!< No dithering
         TEMPORAL = 1    //!< Temporal dithering (default)
+    };
+
+    /**
+     * List of available tone-mapping operators
+     */
+    enum class ToneMapping : uint8_t {
+        LINEAR = 0,     //!< Linear tone mapping (i.e. no tone mapping)
+        ACES = 1,       //!< ACES tone mapping
     };
 
     /**
@@ -352,7 +360,8 @@ public:
     void setRenderTarget(TargetBufferFlags discard = TargetBufferFlags::ALL) noexcept;
 
     /**
-     * Sets how many samples are to be used for MSAA. Default is 1 and disables MSAA.
+     * Sets how many samples are to be used for MSAA in the post-process stage.
+     * Default is 1 and disables MSAA.
      *
      * @param count number of samples to use for multi-sampled anti-aliasing.\n
      *              0: treated as 1
@@ -394,6 +403,19 @@ public:
      * @return The post-processing anti-aliasing method.
      */
     AntiAliasing getAntiAliasing() const noexcept;
+
+    /**
+     * Enables or disables tone-mapping in the post-processing stage. Enabled by default.
+     *
+     * @param type Tone-mapping function.
+     */
+    void setToneMapping(ToneMapping type) noexcept;
+
+    /**
+     * Returns the tone-mapping function.
+     * @return tone-mapping function.
+     */
+    ToneMapping getToneMapping() const noexcept;
 
     /**
      * Enables or disables dithering in the post-processing stage. Enabled by default.
@@ -463,15 +485,18 @@ public:
      * Enable or disable post processing. Enabled by default.
      *
      * Post-processing includes:
-     *  - MSAA
      *  - Tone-mapping & gamma encoding
+     *  - Dithering
+     *  - MSAA
      *  - FXAA
      *  - Dynamic scaling
      *
-     * For now, disabling post-processing forgoes color correctness as well as anti-aliasing and
+     * Disabling post-processing forgoes color correctness as well as anti-aliasing and
      * should only be used experimentally (e.g., for UI overlays).
      *
      * @param enabled true enables post processing, false disables it.
+     *
+     * @see setToneMapping, setAntiAliasing, setDithering, setSampleCount
      */
     void setPostProcessingEnabled(bool enabled) noexcept;
 

@@ -24,7 +24,7 @@
 #include "details/Material.h"
 #include "details/RenderPrimitive.h"
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/Log.h>
 #include <utils/Panic.h>
@@ -47,7 +47,7 @@ struct RenderableManager::BuilderDetails {
     bool mReceiveShadows : 1;
     size_t mSkinningBoneCount = 0;
     Bone const* mUserBones = nullptr;
-    filament::math::mat4f const* mUserBoneMatrices = nullptr;
+    mat4f const* mUserBoneMatrices = nullptr;
 
     explicit BuilderDetails(size_t count)
             : mEntries(count), mCulling(true), mCastShadows(false), mReceiveShadows(true) {
@@ -146,7 +146,7 @@ RenderableManager::Builder& RenderableManager::Builder::skinning(
 }
 
 RenderableManager::Builder& RenderableManager::Builder::skinning(
-        size_t boneCount, filament::math::mat4f const* transforms) noexcept {
+        size_t boneCount, mat4f const* transforms) noexcept {
     mImpl->mSkinningBoneCount = boneCount;
     mImpl->mUserBoneMatrices = transforms;
     return *this;
@@ -294,7 +294,7 @@ void FRenderableManager::create(
             // large block of bones.
             bones = std::unique_ptr<Bones>(new Bones{
                     driver.createUniformBuffer(CONFIG_MAX_BONE_COUNT * sizeof(PerRenderableUibBone),
-                            driver::BufferUsage::DYNAMIC),
+                            backend::BufferUsage::DYNAMIC),
                     UniformBuffer{ count * sizeof(PerRenderableUibBone) },
                     count
             });
@@ -367,7 +367,7 @@ void FRenderableManager::destroyComponentPrimitives(
 
 
 void FRenderableManager::prepare(
-        driver::DriverApi& UTILS_RESTRICT driver,
+        backend::DriverApi& UTILS_RESTRICT driver,
         Instance const* UTILS_RESTRICT instances,
         utils::Range<uint32_t> list) const noexcept {
     auto& manager = mManager;
@@ -378,7 +378,7 @@ void FRenderableManager::prepare(
         assert(i);  // we should never get the null instance here
         if (UTILS_UNLIKELY(bones[i])) {
             if (bones[i]->bones.isDirty()) {
-                driver.updateUniformBuffer(bones[i]->handle, bones[i]->bones.toBufferDescriptor(driver));
+                driver.loadUniformBuffer(bones[i]->handle, bones[i]->bones.toBufferDescriptor(driver));
             }
         }
     }
@@ -479,7 +479,7 @@ void FRenderableManager::setBones(Instance ci,
 }
 
 void FRenderableManager::setBones(Instance ci,
-        filament::math::mat4f const* UTILS_RESTRICT transforms, size_t boneCount, size_t offset) noexcept {
+        mat4f const* UTILS_RESTRICT transforms, size_t boneCount, size_t offset) noexcept {
     if (ci) {
         std::unique_ptr<Bones> const& bones = mManager[ci].bones;
         assert(bones && offset + boneCount <= bones->count);
@@ -495,7 +495,7 @@ void FRenderableManager::setBones(Instance ci,
     }
 }
 
-void FRenderableManager::makeBone(PerRenderableUibBone* UTILS_RESTRICT out, filament::math::mat4f const& t) noexcept {
+void FRenderableManager::makeBone(PerRenderableUibBone* UTILS_RESTRICT out, mat4f const& t) noexcept {
     mat4f m(t);
 
     // figure out the scales
