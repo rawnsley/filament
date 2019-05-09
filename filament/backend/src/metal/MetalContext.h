@@ -18,8 +18,10 @@
 #define TNT_METALCONTEXT_H
 
 #include "MetalBufferPool.h"
+#include "MetalResourceTracker.h"
 #include "MetalState.h"
 
+#include <CoreVideo/CVMetalTextureCache.h>
 #include <Metal/Metal.h>
 #include <QuartzCore/QuartzCore.h>
 
@@ -49,6 +51,9 @@ struct MetalContext {
     id<MTLCommandBuffer> currentCommandBuffer = nullptr;
     id<MTLRenderCommandEncoder> currentCommandEncoder = nullptr;
 
+    // Tracks resources used by command buffers.
+    MetalResourceTracker resourceTracker;
+
     RenderPassFlags currentRenderPassFlags;
     MetalRenderTarget* currentRenderTarget = nullptr;
 
@@ -72,12 +77,17 @@ struct MetalContext {
     id<CAMetalDrawable> currentDrawable = nullptr;
     MTLPixelFormat currentSurfacePixelFormat = MTLPixelFormatInvalid;
     MTLPixelFormat currentDepthPixelFormat = MTLPixelFormatInvalid;
+
+    // External textures.
+    CVMetalTextureCacheRef textureCache = nullptr;
 };
 
 // Acquire the current surface's CAMetalDrawable for the current frame if it has not already been
 // acquired.
 // This method returns the drawable and stores it in the context's currentDrawable field.
 id<CAMetalDrawable> acquireDrawable(MetalContext* context);
+
+id<MTLCommandBuffer> acquireCommandBuffer(MetalContext* context);
 
 } // namespace metal
 } // namespace backend

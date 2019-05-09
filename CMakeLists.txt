@@ -238,9 +238,8 @@ if (FILAMENT_SUPPORTS_METAL)
     add_definitions(-DFILAMENT_SUPPORTS_METAL)
 endif()
 
-# Building filamat increases build times and isn't required for non-desktop platforms, so turn it
-# off by default.
-if (NOT WEBGL AND NOT IOS)
+# Building filamat increases build times and isn't required for web, so turn it off by default.
+if (NOT WEBGL)
     option(FILAMENT_BUILD_FILAMAT "Build filamat and JNI buildings" ON)
 else()
     option(FILAMENT_BUILD_FILAMAT "Build filamat and JNI buildings" OFF)
@@ -342,6 +341,7 @@ add_subdirectory(${LIBRARIES}/filabridge)
 add_subdirectory(${LIBRARIES}/filaflat)
 add_subdirectory(${LIBRARIES}/filameshio)
 add_subdirectory(${LIBRARIES}/geometry)
+add_subdirectory(${LIBRARIES}/gltfio)
 add_subdirectory(${LIBRARIES}/ibl)
 add_subdirectory(${LIBRARIES}/image)
 add_subdirectory(${LIBRARIES}/math)
@@ -352,6 +352,8 @@ add_subdirectory(${EXTERNAL}/robin-map/tnt)
 add_subdirectory(${EXTERNAL}/smol-v/tnt)
 add_subdirectory(${EXTERNAL}/benchmark/tnt)
 add_subdirectory(${EXTERNAL}/meshoptimizer)
+add_subdirectory(${EXTERNAL}/cgltf/tnt)
+add_subdirectory(${EXTERNAL}/stb/tnt)
 
 if (FILAMENT_BUILD_FILAMAT)
     # spirv-tools must come before filamat, as filamat relies on the presence of the
@@ -382,13 +384,11 @@ if (WEBGL)
     endif()
 
     add_subdirectory(${EXTERNAL}/imgui/tnt)
-    add_subdirectory(${EXTERNAL}/stb/tnt)
 endif()
 
 if (NOT ANDROID AND NOT WEBGL AND NOT IOS)
     add_subdirectory(${LIBRARIES}/bluegl)
     add_subdirectory(${LIBRARIES}/filagui)
-    add_subdirectory(${LIBRARIES}/gltfio)
     add_subdirectory(${LIBRARIES}/imageio)
 
     add_subdirectory(${FILAMENT}/java/filamat)
@@ -396,7 +396,6 @@ if (NOT ANDROID AND NOT WEBGL AND NOT IOS)
     add_subdirectory(${FILAMENT}/samples)
 
     add_subdirectory(${EXTERNAL}/astcenc/tnt)
-    add_subdirectory(${EXTERNAL}/cgltf/tnt)
     add_subdirectory(${EXTERNAL}/etc2comp)
     add_subdirectory(${EXTERNAL}/getopt)
     add_subdirectory(${EXTERNAL}/imgui/tnt)
@@ -405,7 +404,6 @@ if (NOT ANDROID AND NOT WEBGL AND NOT IOS)
     add_subdirectory(${EXTERNAL}/libsdl2/tnt)
     add_subdirectory(${EXTERNAL}/libz/tnt)
     add_subdirectory(${EXTERNAL}/skylight/tnt)
-    add_subdirectory(${EXTERNAL}/stb/tnt)
     add_subdirectory(${EXTERNAL}/tinyexr/tnt)
 
     add_subdirectory(${TOOLS}/cmgen)

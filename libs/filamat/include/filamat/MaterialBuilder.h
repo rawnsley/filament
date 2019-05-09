@@ -111,7 +111,7 @@ public:
         // when adding more variables, make sure to update MATERIAL_VARIABLES_COUNT
     };
 
-    static constexpr size_t MATERIAL_PROPERTIES_COUNT = 17;
+    static constexpr size_t MATERIAL_PROPERTIES_COUNT = 19;
     enum class Property : uint8_t {
         BASE_COLOR,              // float4, all shading models
         ROUGHNESS,               // float,  lit shading models only
@@ -127,6 +127,8 @@ public:
         SUBSURFACE_POWER,        // float,  subsurface shading model only
         SUBSURFACE_COLOR,        // float3, subsurface and cloth shading models only
         SHEEN_COLOR,             // float3, cloth shading model only
+        SPECULAR_COLOR,          // float3, specular-glossiness shading model only
+        GLOSSINESS,              // float,  specular-glossiness shading model only
         EMISSIVE,                // float4, all shading models
         NORMAL,                  // float3, all shading models only, except unlit
         POST_LIGHTING_COLOR,     // float4, all shading models
@@ -211,6 +213,7 @@ public:
 
     // double-sided materials don't cull faces, equivalent to culling(CullingMode::NONE)
     // doubleSided() overrides culling() if called
+    // when called with "false", this enables the capability for a run-time toggle
     MaterialBuilder& doubleSided(bool doubleSided) noexcept;
 
     // any fragment with an alpha below this threshold is clipped (MASKED blending mode only)
@@ -342,7 +345,7 @@ private:
     uint8_t mParameterCount = 0;
 
     bool mDoubleSided = false;
-    bool mDoubleSidedSet = false;
+    bool mDoubleSidedCapability = false;
     bool mColorWrite = true;
     bool mDepthTest = true;
     bool mDepthWrite = true;

@@ -133,6 +133,10 @@ struct FFilamentAsset : public FilamentAsset {
         return mWireframe->mEntity;
     }
 
+    filament::Engine* getEngine() const noexcept {
+        return mEngine;
+    }
+
     void releaseSourceData() noexcept {
         mBufferBindings.clear();
         mBufferBindings.shrink_to_fit();
@@ -169,6 +173,7 @@ struct FFilamentAsset : public FilamentAsset {
     Animator* mAnimator = nullptr;
     Wireframe* mWireframe = nullptr;
     int mSourceAssetRefCount = 0;
+    bool mResourcesLoaded = false;
 
     /** @{
      * Transient source data that can freed via releaseSourceData(). */

@@ -34,6 +34,45 @@
 #pragma clang diagnostic ignored "-Wreturn-stack-address"
 #pragma clang diagnostic ignored "-Wunused-parameter"
 
+// In debug builds, we enable validation layers and set up a debug callback if the extension is
+// available. Caution: the debug callback causes a null pointer dereference with optimized builds.
+//
+// To enable validation layers in Android, also be sure to set the jniLibs property in the gradle
+// file for filament-android as follows. This copies the appropriate libraries from the NDK to the
+// device. This makes the aar much larger, so it should be avoided in release builds.
+//
+// sourceSets { main { jniLibs {
+//   srcDirs = ["${android.ndkDirectory}/sources/third_party/vulkan/src/build-android/jniLibs"]
+// } } }
+//
+// Validation crashes on MoltenVK, so we disable it by default on MacOS.
+#if !defined(NDEBUG) && !defined(__APPLE__)
+#define ENABLE_VALIDATION 1
+#else
+#define ENABLE_VALIDATION 0
+#endif
+
+#if ENABLE_VALIDATION
+
+namespace {
+
+VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(VkDebugReportFlagsEXT flags,
+        VkDebugReportObjectTypeEXT objectType, uint64_t object, size_t location,
+        int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
+    if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
+        utils::slog.e << "VULKAN ERROR: (" << pLayerPrefix << ") " << pMessage << utils::io::endl;
+    } else {
+        utils::slog.w << "VULKAN WARNING: (" << pLayerPrefix << ") "
+                << pMessage << utils::io::endl;
+    }
+    // Return TRUE here if an abort is desired.
+    return VK_FALSE;
+}
+
+}
+
+#endif
+
 namespace filament {
 namespace backend {
 
@@ -47,18 +86,15 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
     // Load Vulkan entry points.
     ASSERT_POSTCONDITION(bluevk::initialize(), "BlueVK is unable to load entry points.");
 
-    // In debug builds, attempt to enable the following layers if they are available.
-    // Validation crashes on MoltenVK, so disable it by default on MacOS.
     VkInstanceCreateInfo instanceCreateInfo = {};
-#if !defined(NDEBUG) && !defined(__APPLE__)
+#if ENABLE_VALIDATION
     static utils::StaticString DESIRED_LAYERS[] = {
-    // NOTE: sometimes we see a message: "Cannot activate layer VK_LAYER_GOOGLE_unique_objects
-    // prior to activating VK_LAYER_LUNARG_core_validation." despite the fact that it is clearly
-    // last in the following list. Should we simply remove unique_objects from the list?
 #if defined(ANDROID)
-        "VK_LAYER_GOOGLE_threading",       "VK_LAYER_LUNARG_parameter_validation",
-        "VK_LAYER_LUNARG_object_tracker",  "VK_LAYER_LUNARG_image",
-        "VK_LAYER_LUNARG_core_validation", "VK_LAYER_LUNARG_swapchain",
+        // TODO: use VK_LAYER_KHRONOS_validation instead of these layers after it becomes available
+        "VK_LAYER_GOOGLE_threading",
+        "VK_LAYER_LUNARG_parameter_validation",
+        "VK_LAYER_LUNARG_object_tracker",
+        "VK_LAYER_LUNARG_core_validation",
         "VK_LAYER_GOOGLE_unique_objects"
 #else
         "VK_LAYER_LUNARG_standard_validation",
@@ -73,22 +109,14 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
     std::vector<VkLayerProperties> availableLayers(layerCount);
     vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
     std::vector<const char*> enabledLayers;
-    for (const VkLayerProperties& layer : availableLayers) {
-        const utils::CString availableLayer(layer.layerName);
-        for (const auto& desired : DESIRED_LAYERS) {
+    for (const auto& desired : DESIRED_LAYERS) {
+        for (const VkLayerProperties& layer : availableLayers) {
+            const utils::CString availableLayer(layer.layerName);
             if (availableLayer == desired) {
                 enabledLayers.push_back(desired.c_str());
             }
         }
     }
-
-    // To enable validation layers in Android, set the jniLibs property in the gradle file for
-    // filament-android as follows. This copies the appropriate libraries from the NDK to the
-    // device. This makes the aar much larger, so it should be avoided in release builds.
-    //
-    // sourceSets { main { jniLibs {
-    //   srcDirs = ["${android.ndkDirectory}/sources/third_party/vulkan/src/build-android/jniLibs"]
-    // } } }
 
     if (!enabledLayers.empty()) {
         instanceCreateInfo.enabledLayerCount = (uint32_t) enabledLayers.size();
@@ -102,7 +130,7 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
                 << "Please ensure that VK_LAYER_PATH is set correctly." << utils::io::endl;
 #endif
     }
-#endif
+#endif // ENABLE_VALIDATION
 
     // Create the Vulkan instance.
     VkApplicationInfo appInfo = {};
@@ -118,30 +146,14 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
     UTILS_UNUSED const PFN_vkCreateDebugReportCallbackEXT createDebugReportCallback =
             vkCreateDebugReportCallbackEXT;
 
-    // In debug builds, set up a debug callback if the extension is available.
-    // The debug callback seems to work properly only on 64-bit architectures.
-#if !defined(NDEBUG) && (ULONG_MAX != UINT_MAX)
+#if ENABLE_VALIDATION
     if (createDebugReportCallback) {
-        const PFN_vkDebugReportCallbackEXT cb = [] (VkDebugReportFlagsEXT flags,
-                VkDebugReportObjectTypeEXT objectType, uint64_t object,
-                size_t location, int32_t messageCode, const char* pLayerPrefix,
-                const char* pMessage, void* pUserData) -> VkBool32 {
-            if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
-                utils::slog.e << "VULKAN ERROR: (" << pLayerPrefix << ") "
-                        << pMessage << utils::io::endl;
-                // This is a good spot for a breakpoint although a permanent std::raise(SIGTRAP) is
-                // a bit too aggressive since Mali drivers will emit ERROR reports for minor
-                // violations that are not fatal.
-            } else {
-                utils::slog.w << "VULKAN WARNING: (" << pLayerPrefix << ") "
-                        << pMessage << utils::io::endl;
-            }
-            return VK_FALSE;
-        };
-        VkDebugReportCallbackCreateInfoEXT cbinfo = {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
-            .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
-            .pfnCallback = cb
+        static VkDebugReportCallbackCreateInfoEXT cbinfo = {
+            VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
+            nullptr,
+            VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_ERROR_BIT_EXT,
+            debugReportCallback,
+            nullptr
         };
         result = createDebugReportCallback(mContext.instance, &cbinfo, VKALLOC, &mDebugCallback);
         ASSERT_POSTCONDITION(result == VK_SUCCESS, "Unable to create Vulkan debug callback.");
@@ -548,8 +560,18 @@ void VulkanDriver::destroyFence(Handle<HwFence> fh) {
 }
 
 FenceStatus VulkanDriver::wait(Handle<HwFence> fh, uint64_t timeout) {
-    VkFence fence = handle_cast<VulkanFence>(mHandleMap, fh)->fence->fence;
-    VkResult result = vkWaitForFences(mContext.device, 1, &fence, VK_FALSE, timeout);
+    auto& cmdfence = handle_cast<VulkanFence>(mHandleMap, fh)->fence;
+
+    // The condition variable is used only to guarantee that we're calling vkWaitForFences *after*
+    // calling vkQueueSubmit.
+    std::unique_lock<utils::Mutex> lock(cmdfence->mutex);
+    if (!cmdfence->submitted) {
+        cmdfence->condition.wait(lock);
+        assert(cmdfence->submitted);
+    } else {
+        lock.unlock();
+    }
+    VkResult result = vkWaitForFences(mContext.device, 1, &cmdfence->fence, VK_FALSE, timeout);
     return result == VK_SUCCESS ? FenceStatus::CONDITION_SATISFIED : FenceStatus::TIMEOUT_EXPIRED;
 }
 
@@ -607,6 +629,12 @@ void VulkanDriver::updateCubeImage(Handle<HwTexture> th, uint32_t level,
         PixelBufferDescriptor&& data, FaceOffsets faceOffsets) {
     handle_cast<VulkanTexture>(mHandleMap, th)->updateCubeImage(data, faceOffsets, level);
     scheduleDestroy(std::move(data));
+}
+
+void VulkanDriver::setupExternalImage(void* image) {
+}
+
+void VulkanDriver::cancelExternalImage(void* image) {
 }
 
 void VulkanDriver::setExternalImage(Handle<HwTexture> th, void* image) {
@@ -822,10 +850,14 @@ void VulkanDriver::commit(Handle<HwSwapChain> sch) {
             .signalSemaphoreCount = 1u,
             .pSignalSemaphores = &surfaceContext.renderingFinished,
     };
-    result = vkQueueSubmit(mContext.graphicsQueue, 1, &submitInfo,
-            swapContext.commands.fence->fence);
+
+    auto& cmdfence = swapContext.commands.fence;
+    std::unique_lock<utils::Mutex> lock(cmdfence->mutex);
+    result = vkQueueSubmit(mContext.graphicsQueue, 1, &submitInfo, cmdfence->fence);
+    cmdfence->submitted = true;
+    lock.unlock();
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkQueueSubmit error.");
-    swapContext.commands.submitted = true;
+    cmdfence->condition.notify_all();
 
     // Present the backbuffer.
     VulkanSurfaceContext& surface = handle_cast<VulkanSwapChain>(mHandleMap, sch)->surfaceContext;

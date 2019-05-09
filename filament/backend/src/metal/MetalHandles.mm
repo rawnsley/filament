@@ -165,28 +165,26 @@ void MetalUniformBuffer::copyIntoBuffer(void* src, size_t size) {
 
     bufferPoolEntry = context.bufferPool->acquireBuffer(size);
     memcpy(static_cast<uint8_t*>(bufferPoolEntry->buffer.contents), src, size);
-
-    // Retain the buffer, giving it a +2 reference count. It will be released twice:
-    // 1. When the frame has finished.
-    // 2. When this uniform has finished using the buffer (either upon the next update or when it
-    //    gets destroyed).
-    context.bufferPool->retainBuffer(bufferPoolEntry);
-
-    const MetalBufferPoolEntry* entry = this->bufferPoolEntry;
-    MetalBufferPool* pool = context.bufferPool;
-    // Important to copy the bufferPool and entry pointers into separate variables so that the block
-    // does not capture "this", which may not be valid by the time the frame has completed (if this
-    // uniform is destroyed, for example).
-    [context.currentCommandBuffer addCompletedHandler:^(id<MTLCommandBuffer> commandBuffer) {
-        pool->releaseBuffer(entry);
-    }];
 }
 
-id<MTLBuffer> MetalUniformBuffer::getGpuBuffer() const {
-    if (bufferPoolEntry) {
-        return bufferPoolEntry->buffer;
+id<MTLBuffer> MetalUniformBuffer::getGpuBufferForDraw() {
+    if (!bufferPoolEntry) {
+        return nil;
     }
-    return nil;
+
+    // This uniform is being used in a draw call, so we retain it so it's not released back into the
+    // buffer pool until the frame has finished.
+    auto uniformDeleter = [bufferPool = context.bufferPool](const void* resource){
+        bufferPool->releaseBuffer((const MetalBufferPoolEntry*) resource);
+    };
+    id<MTLCommandBuffer> commandBuffer = context.currentCommandBuffer;
+    if (context.resourceTracker.trackResource(commandBuffer, bufferPoolEntry, uniformDeleter)) {
+        // We only want to retain the buffer once per command buffer- trackResource will return
+        // true if this is the first time tracking this uniform for this command buffer.
+        context.bufferPool->retainBuffer(bufferPoolEntry);
+    }
+
+    return bufferPoolEntry->buffer;
 }
 
 void* MetalUniformBuffer::getCpuBuffer() const {
@@ -272,10 +270,11 @@ MetalProgram::~MetalProgram() {
     [fragmentFunction release];
 }
 
-MetalTexture::MetalTexture(id<MTLDevice> device, backend::SamplerType target, uint8_t levels,
+MetalTexture::MetalTexture(MetalContext& context, backend::SamplerType target, uint8_t levels,
         TextureFormat format, uint8_t samples, uint32_t width, uint32_t height, uint32_t depth,
         TextureUsage usage) noexcept
-    : HwTexture(target, levels, samples, width, height, depth, format), reshaper(format) {
+    : HwTexture(target, levels, samples, width, height, depth, format), context(context),
+        externalImage(context), reshaper(format) {
 
     // Metal does not natively support 3 component textures. We'll emulate support by reshaping the
     // image data and using a 4 component texture.
@@ -296,24 +295,31 @@ MetalTexture::MetalTexture(id<MTLDevice> device, backend::SamplerType target, ui
                                                                     mipmapped:mipmapped];
         descriptor.mipmapLevelCount = levels;
         descriptor.textureType = MTLTextureType2D;
+        descriptor.usage = getMetalTextureUsage(usage);
+        descriptor.storageMode = getMetalStorageMode(format);
+        texture = [context.device newTextureWithDescriptor:descriptor];
     } else if (target == backend::SamplerType::SAMPLER_CUBEMAP) {
         ASSERT_POSTCONDITION(width == height, "Cubemap faces must be square.");
         descriptor = [MTLTextureDescriptor textureCubeDescriptorWithPixelFormat:pixelFormat
                                                                            size:width
                                                                       mipmapped:mipmapped];
         descriptor.mipmapLevelCount = levels;
+        descriptor.usage = getMetalTextureUsage(usage);
+        descriptor.storageMode = getMetalStorageMode(format);
+        texture = [context.device newTextureWithDescriptor:descriptor];
+    } else if (target == backend::SamplerType::SAMPLER_EXTERNAL) {
+        // If we're using external textures (CVPixelBufferRefs), we don't need to make any texture
+        // allocations.
+        texture = nil;
     } else {
         ASSERT_POSTCONDITION(false, "Sampler type not supported.");
     }
 
-    descriptor.usage = getMetalTextureUsage(usage);
-    descriptor.storageMode = getMetalStorageMode(format);
-
-    texture = [device newTextureWithDescriptor:descriptor];
 }
 
 MetalTexture::~MetalTexture() {
     [texture release];
+    externalImage.set(nullptr);
 }
 
 void MetalTexture::load2DImage(uint32_t level, uint32_t xoffset, uint32_t yoffset, uint32_t width,

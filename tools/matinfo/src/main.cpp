@@ -243,6 +243,7 @@ const char* toString(Shading shadingModel) {
         case Shading::LIT: return "lit";
         case Shading::SUBSURFACE: return "subsurface";
         case Shading::CLOTH: return "cloth";
+        case Shading::SPECULAR_GLOSSINESS: return "specularGlossiness";
     }
 }
 
@@ -603,7 +604,7 @@ inline utils::CString typeToString(uint64_t v) {
         str[7 - i] = raw[i];
     }
     str[8] = '\0';
-    return utils::CString(str, 7);
+    return utils::CString(str, strnlen(str, 8));
 }
 
 static void printChunks(const ChunkContainer& container) {
@@ -903,7 +904,9 @@ static bool parseChunks(Config config, void* data, size_t size) {
 
             const auto& item = info[config.shaderIndex];
             parser.getShader(item.shaderModel, item.variant, item.pipelineStage, builder);
-            std::cout << builder.data();
+
+            // Casted to char* to print as a string rather than hex value.
+            std::cout << (const char*) builder.data();
 
             return true;
         }
@@ -963,7 +966,7 @@ static bool parseChunks(Config config, void* data, size_t size) {
 
             const auto& item = info[config.shaderIndex];
             parser.getShader(item.shaderModel, item.variant, item.pipelineStage, builder);
-            std::cout << builder.data();
+            std::cout << (const char*) builder.data();
 
             return true;
         }

@@ -4,9 +4,13 @@ material {
     shadingModel : ${SHADINGMODEL},
     blending : ${BLENDING},
     depthWrite : true,
-    doubleSided : true,
+    doubleSided : false,
     flipUV : false,
     parameters : [
+
+        { type : float3, name : specularFactor },
+        { type : float, name : glossinessFactor },
+
         // Base Color
         { type : int, name : baseColorIndex },
         { type : float4, name : baseColorFactor },
@@ -42,7 +46,7 @@ material {
 
 fragment {
     void material(inout MaterialInputs material) {
-        float2 uvs[2];// = { getUV0(), getUV1() };
+        float2 uvs[2];
         uvs[0] = getUV0();
         uvs[1] = getUV1();
 
@@ -71,17 +75,35 @@ fragment {
         material.baseColor *= getColor();
 
         #if !defined(SHADING_MODEL_UNLIT)
-            material.roughness = materialParams.roughnessFactor;
-            material.metallic = materialParams.metallicFactor;
+
+            #if defined(SHADING_MODEL_LIT)
+                material.roughness = materialParams.roughnessFactor;
+                material.metallic = materialParams.metallicFactor;
+            #endif
+
             material.emissive.rgb = materialParams.emissiveFactor.rgb;
             material.emissive.a = 3.0;
+
+            #if defined(SHADING_MODEL_SPECULAR_GLOSSINESS)
+                material.glossiness = materialParams.glossinessFactor;
+                material.specularColor = materialParams.specularFactor;
+            #endif
+
             if (materialParams.metallicRoughnessIndex > -1) {
                 float2 uv = uvs[materialParams.metallicRoughnessIndex];
                 uv = (vec3(uv, 1.0) * materialParams.metallicRoughnessUvMatrix).xy;
-                vec4 roughness = texture(materialParams_metallicRoughnessMap, uv);
-                material.roughness *= roughness.g;
-                material.metallic *= roughness.b;
+
+                #if defined(SHADING_MODEL_SPECULAR_GLOSSINESS)
+                    vec4 sg = texture(materialParams_metallicRoughnessMap, uv);
+                    material.specularColor *= sg.rgb;
+                    material.glossiness *= sg.a;
+                #else
+                    vec4 mr = texture(materialParams_metallicRoughnessMap, uv);
+                    material.roughness *= mr.g;
+                    material.metallic *= mr.b;
+                #endif
             }
+
             if (materialParams.aoIndex > -1) {
                 float2 uv = uvs[materialParams.aoIndex];
                 uv = (vec3(uv, 1.0) * materialParams.occlusionUvMatrix).xy;

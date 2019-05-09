@@ -23,6 +23,8 @@
 #include "MetalHandles.h"
 #include "MetalState.h"
 
+#include <CoreVideo/CVMetalTexture.h>
+#include <CoreVideo/CVPixelBuffer.h>
 #include <Metal/Metal.h>
 #include <QuartzCore/QuartzCore.h>
 
@@ -35,6 +37,10 @@
 namespace filament {
 namespace backend {
 namespace metal {
+
+static MTLLoadAction determineLoadAction(const RenderPassParams& params, TargetBufferFlags buffer);
+static MTLStoreAction determineStoreAction(const RenderPassParams& params, TargetBufferFlags buffer,
+        bool isMultisampled);
 
 Driver* MetalDriver::create(MetalPlatform* const platform) {
     assert(platform);
@@ -52,10 +58,15 @@ MetalDriver::MetalDriver(backend::MetalPlatform* platform) noexcept
     mContext->depthStencilStateCache.setDevice(mContext->device);
     mContext->samplerStateCache.setDevice(mContext->device);
     mContext->bufferPool = new MetalBufferPool(*mContext);
+
+    CVReturn success = CVMetalTextureCacheCreate(kCFAllocatorDefault, nullptr, mContext->device,
+            nullptr, &mContext->textureCache);
+    ASSERT_POSTCONDITION(success == kCVReturnSuccess, "Could not create Metal texture cache.");
 }
 
 MetalDriver::~MetalDriver() noexcept {
     [mContext->device release];
+    CFRelease(mContext->textureCache);
     delete mContext->bufferPool;
     delete mContext;
 }
@@ -71,7 +82,11 @@ void MetalDriver::debugCommand(const char *methodName) {
 
 void MetalDriver::beginFrame(int64_t monotonic_clock_ns, uint32_t frameId) {
     mContext->framePool = [[NSAutoreleasePool alloc] init];
-    mContext->currentCommandBuffer = [mContext->commandQueue commandBuffer];
+
+    id<MTLCommandBuffer> commandBuffer = acquireCommandBuffer(mContext);
+    [commandBuffer addCompletedHandler:^(id <MTLCommandBuffer> buffer) {
+        mContext->resourceTracker.clearResources(buffer);
+    }];
 }
 
 void MetalDriver::setPresentationTime(int64_t monotonic_clock_ns) {
@@ -82,6 +97,8 @@ void MetalDriver::endFrame(uint32_t frameId) {
     // Release resources created during frame execution- like commandBuffer and currentDrawable.
     [mContext->framePool drain];
     mContext->bufferPool->gc();
+
+    CVMetalTextureCacheFlush(mContext->textureCache, 0);
 }
 
 void MetalDriver::flush(int dummy) {
@@ -105,7 +122,7 @@ void MetalDriver::createIndexBufferR(Handle<HwIndexBuffer> ibh, ElementType elem
 void MetalDriver::createTextureR(Handle<HwTexture> th, SamplerType target, uint8_t levels,
         TextureFormat format, uint8_t samples, uint32_t width, uint32_t height,
         uint32_t depth, TextureUsage usage) {
-    construct_handle<MetalTexture>(mHandleMap, th, mContext->device, target, levels, format, samples,
+    construct_handle<MetalTexture>(mHandleMap, th, *mContext, target, levels, format, samples,
             width, height, depth, usage);
 }
 
@@ -305,6 +322,8 @@ void MetalDriver::terminate() {
     mContext->bufferPool->reset();
     [mContext->commandQueue release];
     [mContext->driverPool drain];
+
+    MetalExternalImage::shutdown();
 }
 
 ShaderModel MetalDriver::getShaderModel() const noexcept {
@@ -386,8 +405,21 @@ void MetalDriver::updateCubeImage(Handle<HwTexture> th, uint32_t level,
     scheduleDestroy(std::move(data));
 }
 
-void MetalDriver::setExternalImage(Handle<HwTexture> th, void* image) {
+void MetalDriver::setupExternalImage(void* image) {
+    // Take ownership of the passed in buffer. It will be released the next time
+    // setExternalImage is called, or when the texture is destroyed.
+    CVPixelBufferRef pixelBuffer = (CVPixelBufferRef) image;
+    CVPixelBufferRetain(pixelBuffer);
+}
 
+void MetalDriver::cancelExternalImage(void* image) {
+    CVPixelBufferRef pixelBuffer = (CVPixelBufferRef) image;
+    CVPixelBufferRelease(pixelBuffer);
+}
+
+void MetalDriver::setExternalImage(Handle<HwTexture> th, void* image) {
+    auto texture = handle_cast<MetalTexture>(mHandleMap, th);
+    texture->externalImage.set((CVPixelBufferRef) image);
 }
 
 void MetalDriver::setExternalStream(Handle<HwTexture> th, Handle<HwStream> sh) {
@@ -440,37 +472,34 @@ void MetalDriver::beginRenderPass(Handle<HwRenderTarget> rth,
 
     MTLRenderPassDescriptor* descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
 
+    const auto discardFlags = (TargetBufferFlags) params.flags.discardEnd;
+    const auto discardColor = (discardFlags & TargetBufferFlags::COLOR);
+    const auto discardDepth = (discardFlags & TargetBufferFlags::DEPTH);
+
     // Color
 
     descriptor.colorAttachments[0].texture = renderTarget->getColor();
-    descriptor.colorAttachments[0].resolveTexture = renderTarget->getColorResolve();
+    descriptor.colorAttachments[0].resolveTexture = discardColor ? nil : renderTarget->getColorResolve();
     mContext->currentSurfacePixelFormat = descriptor.colorAttachments[0].texture.pixelFormat;
 
     // Metal clears the entire attachment without respect to viewport or scissor.
     // TODO: Might need to clear the scissor area manually via a draw if we need that functionality.
 
-    const auto clearFlags = (TargetBufferFlags) params.flags.clear;
-    const bool clearColor = clearFlags & TargetBufferFlags::COLOR;
-    const bool clearDepth = clearFlags & TargetBufferFlags::DEPTH;
-
-    descriptor.colorAttachments[0].loadAction =
-            clearColor ? MTLLoadActionClear : MTLLoadActionDontCare;
+    descriptor.colorAttachments[0].loadAction = determineLoadAction(params, TargetBufferFlags::COLOR);
+    descriptor.colorAttachments[0].storeAction = determineStoreAction(params, TargetBufferFlags::COLOR,
+            renderTarget->isMultisampled());
     descriptor.colorAttachments[0].clearColor = MTLClearColorMake(
             params.clearColor.r, params.clearColor.g, params.clearColor.b, params.clearColor.a);
 
     // Depth
 
     descriptor.depthAttachment.texture = renderTarget->getDepth();
-    descriptor.depthAttachment.resolveTexture = renderTarget->getDepthResolve();
-    descriptor.depthAttachment.loadAction = clearDepth ? MTLLoadActionClear : MTLLoadActionDontCare;
+    descriptor.depthAttachment.resolveTexture = discardDepth ? nil : renderTarget->getDepthResolve();
+    descriptor.depthAttachment.loadAction = determineLoadAction(params, TargetBufferFlags::DEPTH);
+    descriptor.depthAttachment.storeAction = determineStoreAction(params, TargetBufferFlags::DEPTH,
+            renderTarget->isMultisampled());
     descriptor.depthAttachment.clearDepth = params.clearDepth;
     mContext->currentDepthPixelFormat = descriptor.depthAttachment.texture.pixelFormat;
-
-    if (renderTarget->isMultisampled()) {
-        descriptor.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
-        // TODO: We don't need to resolve the depth texture if we don't need it.
-        descriptor.depthAttachment.storeAction = MTLStoreActionMultisampleResolve;
-    }
 
     mContext->currentCommandEncoder =
             [mContext->currentCommandBuffer renderCommandEncoderWithDescriptor:descriptor];
@@ -553,6 +582,7 @@ void MetalDriver::makeCurrent(Handle<HwSwapChain> schDraw, Handle<HwSwapChain> s
 void MetalDriver::commit(Handle<HwSwapChain> sch) {
     [mContext->currentCommandBuffer presentDrawable:mContext->currentDrawable];
     [mContext->currentCommandBuffer commit];
+    mContext->currentCommandBuffer = nil;
     mContext->currentDrawable = nil;
 }
 
@@ -660,13 +690,6 @@ void MetalDriver::draw(backend::PipelineState ps, Handle<HwRenderPrimitive> rph)
         [mContext->currentCommandEncoder setDepthStencilState:state];
     }
 
-    // Depth bias. Use a depth bias of 1.0 / 1.0 for the shadow pass.
-    TargetBufferFlags clearFlags = (TargetBufferFlags) mContext->currentRenderPassFlags.clear;
-    if ((clearFlags & TargetBufferFlags::SHADOW) == TargetBufferFlags::SHADOW) {
-        [mContext->currentCommandEncoder setDepthBias:1.0f
-                                         slopeScale:1.0f
-                                              clamp:0.0];
-    }
     if (ps.polygonOffset.constant != 0.0 || ps.polygonOffset.slope != 0.0) {
         [mContext->currentCommandEncoder setDepthBias:ps.polygonOffset.constant
                                          slopeScale:ps.polygonOffset.slope
@@ -678,11 +701,11 @@ void MetalDriver::draw(backend::PipelineState ps, Handle<HwRenderPrimitive> rph)
     NSUInteger offsets[Program::UNIFORM_BINDING_COUNT] = { 0 };
 
     enumerateBoundUniformBuffers([&uniformsToBind, &offsets](const UniformBufferState& state,
-            const MetalUniformBuffer* uniform, uint32_t index) {
+            MetalUniformBuffer* uniform, uint32_t index) {
         // getGpuBuffer() might return nil, which means there isn't a device allocation for this
         // uniform. In this case, we'll update the uniform below with our CPU-side buffer via
         // setVertexBytes and setFragmentBytes.
-        id<MTLBuffer> gpuBuffer = uniform->getGpuBuffer();
+        id<MTLBuffer> gpuBuffer = uniform->getGpuBufferForDraw();
         if (gpuBuffer == nil) {
             return;
         }
@@ -724,6 +747,10 @@ void MetalDriver::draw(backend::PipelineState ps, Handle<HwRenderPrimitive> rph)
             uint8_t binding) {
         const auto metalTexture = handle_const_cast<MetalTexture>(mHandleMap, sampler->t);
         texturesToBind[binding] = metalTexture->texture;
+
+        if (metalTexture->externalImage.isValid()) {
+            texturesToBind[binding] = metalTexture->externalImage.getMetalTextureForDraw();
+        }
 
         id <MTLSamplerState> samplerState = mContext->samplerStateCache.getOrCreateState(sampler->s);
         samplersToBind[binding] = samplerState;
@@ -789,16 +816,35 @@ void MetalDriver::enumerateSamplerGroups(
 }
 
 void MetalDriver::enumerateBoundUniformBuffers(
-        const std::function<void(const UniformBufferState&, const MetalUniformBuffer*,
-        uint32_t)>& f) {
+        const std::function<void(const UniformBufferState&, MetalUniformBuffer*, uint32_t)>& f) {
     for (uint32_t i = 0; i < Program::UNIFORM_BINDING_COUNT; i++) {
         auto& thisUniform = mContext->uniformState[i];
         if (!thisUniform.bound) {
             continue;
         }
-        const auto* uniform = handle_const_cast<MetalUniformBuffer>(mHandleMap, thisUniform.ubh);
+        auto* uniform = handle_cast<MetalUniformBuffer>(mHandleMap, thisUniform.ubh);
         f(thisUniform, uniform, i);
     }
+}
+
+MTLLoadAction determineLoadAction(const RenderPassParams& params, TargetBufferFlags buffer) {
+    const auto clearFlags = (TargetBufferFlags) params.flags.clear;
+    const auto discardStartFlags = (TargetBufferFlags) params.flags.discardStart;
+    if (clearFlags & buffer) {
+        return MTLLoadActionClear;
+    } else if (discardStartFlags & buffer) {
+        return MTLLoadActionDontCare;
+    }
+    return MTLLoadActionLoad;
+}
+
+static MTLStoreAction determineStoreAction(const RenderPassParams& params, TargetBufferFlags buffer,
+        bool isMultisampled) {
+    const auto discardEndFlags = (TargetBufferFlags) params.flags.discardEnd;
+    if (discardEndFlags & buffer) {
+        return MTLStoreActionDontCare;
+    }
+    return isMultisampled ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
 }
 
 } // namespace metal

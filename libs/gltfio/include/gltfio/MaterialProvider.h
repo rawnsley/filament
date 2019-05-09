@@ -38,29 +38,41 @@ struct alignas(4) MaterialKey {
     bool unlit : 1;
     bool hasVertexColors : 1;
     bool hasBaseColorTexture : 1;
-    bool hasMetallicRoughnessTexture : 1;
     bool hasNormalTexture : 1;
     bool hasOcclusionTexture : 1;
     bool hasEmissiveTexture : 1;
+    bool useSpecularGlossiness : 1;
     AlphaMode alphaMode;
+    union {
+        struct {
+            bool hasMetallicRoughnessTexture : 1;
+            uint8_t metallicRoughnessUV : 7;
+        };
+        struct {
+            bool hasSpecularGlossinessTexture : 1;
+            uint8_t specularGlossinessUV : 7;
+        };
+    };
     uint8_t baseColorUV;
-    uint8_t metallicRoughnessUV;
     // -- 32 bit boundary --
     uint8_t emissiveUV;
     uint8_t aoUV;
     uint8_t normalUV;
     bool hasTextureTransforms : 8;
-    // -- 32 bit boundary --
-    float alphaMaskThreshold;
 };
 
-static_assert(sizeof(MaterialKey) == 12, "MaterialKey has unexpected padding.");
+static_assert(sizeof(MaterialKey) == 8, "MaterialKey has unexpected padding.");
 
 bool operator==(const MaterialKey& k1, const MaterialKey& k2);
 
 // Define a mapping from a uv set index in the source asset to one of Filament's uv sets.
 enum UvSet : uint8_t { UNUSED, UV0, UV1 };
 using UvMap = std::array<UvSet, 8>;
+
+enum MaterialSource {
+    GENERATE_SHADERS,
+    LOAD_UBERSHADERS,
+};
 
 /**
  * MaterialProvider is an interface to a provider of glTF materials with two implementations.
@@ -73,10 +85,9 @@ using UvMap = std::array<UvSet, 8>;
  */
 class MaterialProvider {
 public:
-    static MaterialProvider* createMaterialGenerator(filament::Engine* engine);
-    static MaterialProvider* createUbershaderLoader(filament::Engine* engine);
-
     virtual ~MaterialProvider() {}
+
+    virtual MaterialSource getSource() const noexcept = 0;
 
     // Creates or fetches a compiled Filament material, then creates an instance from it. The given
     // configuration key might be mutated due to resource constraints. The second argument is
@@ -95,6 +106,9 @@ namespace details {
     void processShaderString(std::string* shader, const UvMap& uvmap,
             const MaterialKey& config);
 }
+
+MaterialProvider* createMaterialGenerator(filament::Engine* engine);
+MaterialProvider* createUbershaderLoader(filament::Engine* engine);
 
 } // namespace gltfio
 

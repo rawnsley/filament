@@ -27,7 +27,13 @@ void getPixelParams(const MaterialInputs material, out PixelParams pixel) {
     baseColor.rgb /= max(baseColor.a, FLT_EPS);
 #endif
 
-#if !defined(SHADING_MODEL_CLOTH)
+#if defined(SHADING_MODEL_SPECULAR_GLOSSINESS)
+    // This is from KHR_materials_pbrSpecularGlossiness.
+    vec3 specular = material.specularColor;
+    float maxSpecularComponent = max(max(specular.r, specular.g), specular.b);
+    pixel.diffuseColor = baseColor.rgb * (1.0 - maxSpecularComponent);
+    pixel.f0 = specular;
+#elif !defined(SHADING_MODEL_CLOTH)
     float metallic = material.metallic;
     float reflectance = material.reflectance;
 
@@ -44,7 +50,11 @@ void getPixelParams(const MaterialInputs material, out PixelParams pixel) {
 
     // Clamp the roughness to a minimum value to avoid divisions by 0 in the
     // lighting code
+#if defined(SHADING_MODEL_SPECULAR_GLOSSINESS)
+    float roughness = 1.0 - material.glossiness;
+#else
     float roughness = material.roughness;
+#endif
     roughness = clamp(roughness, MIN_ROUGHNESS, 1.0);
 
 #if defined(GEOMETRIC_SPECULAR_AA_ROUGHNESS)

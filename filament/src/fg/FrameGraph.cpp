@@ -582,7 +582,7 @@ FrameGraphPassResources::getRenderTarget(FrameGraphResource r) const noexcept {
 
     // find a rendertarget in this pass that has this resource has attachment
 
-    // TODO: for cubemaps/arrays, we'll need to be able to specifyt he face/index
+    // TODO: for cubemaps/arrays, we'll need to be able to specify the face/index
 
     for (RenderTarget const* renderTarget : mPass.renderTargets) {
         auto const& desc = renderTarget->desc;
@@ -874,10 +874,12 @@ FrameGraph& FrameGraph::compile() noexcept {
             //  attachment would be missing).
             for (fg::RenderTarget& rt : renderTargets) {
                 auto& textures = rt.desc.attachments.textures;
-                ResourceNode const& node = resourceNodes[textures[0].index];
-                if (node.resource->imported && node.resource == from.resource) {
-                    for (size_t i = 1; i < textures.size(); ++i) {
-                        textures[i] = {};
+                if (textures[0].isValid()) {
+                    ResourceNode const& node = resourceNodes[textures[0].index];
+                    if (node.resource->imported && node.resource == from.resource) {
+                        for (size_t i = 1; i < textures.size(); ++i) {
+                            textures[i] = {};
+                        }
                     }
                 }
             }

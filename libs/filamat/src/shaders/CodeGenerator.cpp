@@ -450,6 +450,7 @@ std::ostream& CodeGenerator::generateShaderLit(std::ostream& out, ShaderType typ
             case Shading::UNLIT:
                 assert("Lit shader generated with unlit shading model");
                 break;
+            case Shading::SPECULAR_GLOSSINESS:
             case Shading::LIT:
                 out << SHADERS_SHADING_MODEL_STANDARD_FS_DATA;
                 break;
@@ -508,6 +509,8 @@ char const* CodeGenerator::getConstantName(MaterialBuilder::Property property) n
         case Property::SUBSURFACE_POWER:     return "SUBSURFACE_POWER";
         case Property::SUBSURFACE_COLOR:     return "SUBSURFACE_COLOR";
         case Property::SHEEN_COLOR:          return "SHEEN_COLOR";
+        case Property::GLOSSINESS:           return "GLOSSINESS";
+        case Property::SPECULAR_COLOR:       return "SPECULAR_COLOR";
         case Property::EMISSIVE:             return "EMISSIVE";
         case Property::NORMAL:               return "NORMAL";
         case Property::POST_LIGHTING_COLOR:  return "POST_LIGHTING_COLOR";

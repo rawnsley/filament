@@ -17,8 +17,10 @@ void computeShadingParams() {
     HIGHP vec3 n = vertex_worldNormal;
 #endif
 
-#if defined(MATERIAL_IS_DOUBLE_SIDED)
-    n = gl_FrontFacing ? n : -n;
+#if defined(MATERIAL_HAS_DOUBLE_SIDED_CAPABILITY)
+    if (isDoubleSided()) {
+        n = gl_FrontFacing ? n : -n;
+    }
 #endif
 
 #if defined(MATERIAL_HAS_ANISOTROPY) || defined(MATERIAL_HAS_NORMAL) || defined(MATERIAL_HAS_CLEAR_COAT_NORMAL)
@@ -50,7 +52,7 @@ void prepareMaterial(const MaterialInputs material) {
 #else
     shading_normal = shading_tangentToWorld[2];
 #endif
-    shading_NoV = abs(dot(shading_normal, shading_view)) + FLT_EPS;
+    shading_NoV = clampNoV(dot(shading_normal, shading_view));
     shading_reflected = reflect(-shading_view, shading_normal);
 
 #if defined(MATERIAL_HAS_CLEAR_COAT)

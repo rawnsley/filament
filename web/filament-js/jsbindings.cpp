@@ -53,6 +53,12 @@
 
 #include <geometry/SurfaceOrientation.h>
 
+#include <gltfio/Animator.h>
+#include <gltfio/AssetLoader.h>
+#include <gltfio/FilamentAsset.h>
+#include <gltfio/MaterialProvider.h>
+#include <gltfio/ResourceLoader.h>
+
 #include <image/KtxBundle.h>
 #include <image/KtxUtility.h>
 
@@ -76,6 +82,7 @@ using namespace emscripten;
 using namespace filament;
 using namespace filamesh;
 using namespace geometry;
+using namespace gltfio;
 using namespace image;
 
 // Many methods require a thin layer of C++ glue which is elegantly expressed with a lambda.
@@ -92,24 +99,27 @@ using namespace image;
 #define BIND(T) template<> void raw_destructor<T>(T* ptr) {}
 namespace emscripten {
     namespace internal {
-        BIND(Engine)
-        BIND(SwapChain)
-        BIND(Renderer)
-        BIND(View)
-        BIND(Scene)
+        BIND(Animator)
+        BIND(AssetLoader)
         BIND(Camera)
-        BIND(LightManager)
-        BIND(RenderableManager)
-        BIND(TransformManager)
-        BIND(VertexBuffer)
+        BIND(Engine)
+        BIND(FilamentAsset)
         BIND(IndexBuffer)
         BIND(IndirectLight)
+        BIND(LightManager)
         BIND(Material)
         BIND(MaterialInstance)
+        BIND(RenderableManager)
+        BIND(Renderer)
+        BIND(Scene)
         BIND(Skybox)
+        BIND(SwapChain)
         BIND(Texture)
+        BIND(TransformManager)
         BIND(utils::Entity)
         BIND(utils::EntityManager)
+        BIND(VertexBuffer)
+        BIND(View)
     }
 }
 #undef BIND
@@ -449,6 +459,12 @@ class_<View>("View")
 /// See also the [Engine] methods `createScene` and `destroyScene`.
 class_<Scene>("Scene")
     .function("addEntity", &Scene::addEntity)
+
+    .function("addEntities", EMBIND_LAMBDA(void,
+            (Scene* self, std::vector<utils::Entity> entities), {
+        self->addEntities(entities.data(), entities.size());
+    }), allow_raw_pointers())
+
     .function("hasEntity", &Scene::hasEntity)
     .function("remove", &Scene::remove)
     .function("setSkybox", &Scene::setSkybox, allow_raw_pointers())
@@ -490,7 +506,11 @@ class_<Camera>("Camera")
     }), allow_raw_pointers())
 
     .function("setLensProjection", &Camera::setLensProjection)
-    .function("setCustomProjection", &Camera::setCustomProjection)
+
+    .function("setCustomProjection", EMBIND_LAMBDA(void, (Camera* self,
+            flatmat4 m, double near, double far), {
+        self->setCustomProjection(filament::math::mat4(m.m), near, far);
+    }), allow_raw_pointers())
 
     .function("getProjectionMatrix", EMBIND_LAMBDA(flatmat4, (Camera* self), {
         return flatmat4 { filament::math::mat4f(self->getProjectionMatrix()) };
@@ -817,7 +837,9 @@ class_<MaterialInstance>("MaterialInstance")
     .function("setColorParameter", EMBIND_LAMBDA(void,
             (MaterialInstance* self, std::string name, RgbType type, filament::math::float3 value), {
         self->setParameter(name.c_str(), type, value); }), allow_raw_pointers())
-    .function("setPolygonOffset", &MaterialInstance::setPolygonOffset);
+    .function("setPolygonOffset", &MaterialInstance::setPolygonOffset)
+    .function("setMaskThreshold", &MaterialInstance::setMaskThreshold)
+    .function("setDoubleSided", &MaterialInstance::setDoubleSided);
 
 class_<TextureSampler>("TextureSampler")
     .constructor<backend::SamplerMinFilter, backend::SamplerMagFilter, backend::SamplerWrapMode>();
@@ -1057,6 +1079,7 @@ class_<KtxInfo>("KtxInfo")
     .property("pixelDepth", &KtxInfo::pixelDepth);
 
 register_vector<std::string>("RegistryKeys");
+register_vector<utils::Entity>("EntityVector");
 
 class_<MeshReader::MaterialRegistry>("MeshReader$MaterialRegistry")
     .constructor<>()
@@ -1197,5 +1220,94 @@ class_<SurfaceOrientation>("SurfaceOrientation")
                 utils::slog.e << "Unsupported quaternion type." << utils::io::endl;
         }
     }), allow_raw_pointers());
+
+class_<Animator>("gltfio$Animator")
+    .function("applyAnimation", &Animator::applyAnimation)
+    .function("updateBoneMatrices", &Animator::updateBoneMatrices)
+    .function("getAnimationCount", &Animator::getAnimationCount)
+    .function("getAnimationDuration", &Animator::getAnimationDuration)
+    .function("getAnimationName", EMBIND_LAMBDA(std::string, (Animator* self, size_t index), {
+        return std::string(self->getAnimationName(index));
+    }), allow_raw_pointers());
+
+class_<FilamentAsset>("gltfio$FilamentAsset")
+    .function("getEntities", EMBIND_LAMBDA(std::vector<utils::Entity>, (FilamentAsset* self), {
+        const utils::Entity* ptr = self->getEntities();
+        return std::vector<utils::Entity>(ptr, ptr + self->getEntityCount());
+    }), allow_raw_pointers())
+
+    .function("getRoot", &FilamentAsset::getRoot)
+
+    .function("getMaterialInstances", EMBIND_LAMBDA(std::vector<const MaterialInstance*>,
+            (FilamentAsset* self), {
+        const filament::MaterialInstance* const* ptr = self->getMaterialInstances();
+        return std::vector<const MaterialInstance*>(ptr, ptr + self->getMaterialInstanceCount());
+    }), allow_raw_pointers())
+
+    .function("getResourceUrls", EMBIND_LAMBDA(std::vector<std::string>, (FilamentAsset* self), {
+        std::vector<std::string> retval;
+        const BufferBinding* bbinding = self->getBufferBindings();
+        for (size_t i = 0, len = self->getBufferBindingCount(); i < len; ++i, ++bbinding) {
+            retval.push_back(bbinding->uri);
+        }
+        const TextureBinding* tbinding = self->getTextureBindings();
+        for (size_t i = 0, len = self->getTextureBindingCount(); i < len; ++i, ++tbinding) {
+            retval.push_back(tbinding->uri);
+        }
+        return retval;
+    }), allow_raw_pointers())
+
+    .function("getBoundingBox", &FilamentAsset::getBoundingBox)
+    .function("getAnimator", &FilamentAsset::getAnimator, allow_raw_pointers())
+    .function("getWireframe", &FilamentAsset::getWireframe)
+    .function("getEngine", &FilamentAsset::getEngine, allow_raw_pointers())
+    .function("releaseSourceData", &FilamentAsset::releaseSourceData);
+
+// This little wrapper exists to get around RTTI requirements in embind.
+struct UbershaderLoader {
+    MaterialProvider* provider;
+    void destroyMaterials() { provider->destroyMaterials(); }
+};
+
+class_<UbershaderLoader>("gltfio$UbershaderLoader")
+    .constructor(EMBIND_LAMBDA(UbershaderLoader, (Engine* engine), {
+        return UbershaderLoader { createUbershaderLoader(engine) };
+    }))
+    .function("destroyMaterials", &UbershaderLoader::destroyMaterials);
+
+class_<AssetLoader>("gltfio$AssetLoader")
+
+    .constructor(EMBIND_LAMBDA(AssetLoader*, (Engine* engine, UbershaderLoader materials), {
+        utils::NameComponentManager* names = nullptr;
+        return AssetLoader::create({ engine, materials.provider, names });
+    }), allow_raw_pointers())
+
+    /// createAssetFromJson ::static method::
+    /// buffer ::argument:: asset string, or Uint8Array, or [Buffer]
+    /// ::retval:: an instance of [FilamentAsset]
+    .function("_createAssetFromJson", EMBIND_LAMBDA(FilamentAsset*,
+            (AssetLoader* self, BufferDescriptor buffer), {
+        return self->createAssetFromJson((const uint8_t*) buffer.bd->buffer, buffer.bd->size);
+    }), allow_raw_pointers())
+
+    /// createAssetFroBinary ::static method::
+    /// buffer ::argument:: asset string, or Uint8Array, or [Buffer]
+    /// ::retval:: an instance of [FilamentAsset]
+    .function("_createAssetFromBinary", EMBIND_LAMBDA(FilamentAsset*,
+            (AssetLoader* self, BufferDescriptor buffer), {
+        return self->createAssetFromBinary((const uint8_t*) buffer.bd->buffer, buffer.bd->size);
+    }), allow_raw_pointers());
+
+class_<ResourceLoader>("gltfio$ResourceLoader")
+    .constructor(EMBIND_LAMBDA(ResourceLoader*, (Engine* engine), {
+        return new ResourceLoader({ engine, utils::Path(), true, true });
+    }), allow_raw_pointers())
+
+    .function("addResourceData", EMBIND_LAMBDA(void, (ResourceLoader* self, std::string url,
+            BufferDescriptor buffer), {
+        self->addResourceData(url, std::move(*buffer.bd));
+    }), allow_raw_pointers())
+
+    .function("loadResources", &ResourceLoader::loadResources, allow_raw_pointers());
 
 } // EMSCRIPTEN_BINDINGS

@@ -31,6 +31,8 @@
 #include <utils/JobSystem.h>
 #include <utils/Systrace.h>
 
+#include <utility>
+
 using namespace utils;
 using namespace filament::math;
 
@@ -54,25 +56,22 @@ void RenderPass::setCamera(const CameraInfo& camera) noexcept {
     mCamera = camera;
 }
 
-void RenderPass::setCommandType(RenderPass::CommandTypeFlags commandType) noexcept {
-    mCommandType = commandType;
-}
-
 void RenderPass::setRenderFlags(RenderPass::RenderFlags flags) noexcept {
     mFlags = flags;
 }
 
-void RenderPass::setExecuteSync(JobSystem::Job* sync) noexcept {
-    mSync = sync;
+void RenderPass::overridePolygonOffset(backend::PolygonOffset* polygonOffset) noexcept {
+    if ((mPolygonOffsetOverride = (polygonOffset != nullptr))) {
+        mPolygonOffset = *polygonOffset;
+    }
 }
 
-void RenderPass::generateSortedCommands() noexcept {
+void RenderPass::generateSortedCommands(CommandTypeFlags const commandTypeFlags) noexcept {
     SYSTRACE_CONTEXT();
 
     FEngine& engine = mEngine;
     JobSystem& js = engine.getJobSystem();
     GrowingSlice<Command>& commands = mCommands;
-    const CommandTypeFlags commandTypeFlags = mCommandType;
     const RenderFlags renderFlags = mFlags;
     CameraInfo const& camera = mCamera;
     FScene& scene = *mScene;
@@ -131,11 +130,6 @@ void RenderPass::generateSortedCommands() noexcept {
                 return ((c.key & PASS_MASK) >> PASS_SHIFT) != 0xFF;
             });
 
-    // give a chance to dependant jobs to finish
-    if (mSync) {
-        js.waitAndRelease(mSync);
-    }
-
     commands.resize(uint32_t(last - commands.begin()));
 }
 
@@ -161,16 +155,19 @@ void RenderPass::execute(const char* name,
     engine.flush(); // Wake-up the driver thread
 }
 
-/* static */
 UTILS_NOINLINE // no need to be inlined
 void RenderPass::recordDriverCommands(FEngine::DriverApi& driver, FScene& scene,
-        const Command* UTILS_RESTRICT first, const Command* last) noexcept {
+        const Command* UTILS_RESTRICT first, const Command* last)  const noexcept {
     SYSTRACE_CALL();
 
     if (first != last) {
         SYSTRACE_VALUE32("commandCount", last - first);
 
-        PipelineState pipeline;
+        PolygonOffset dummyPolyOffset;
+        PipelineState pipeline{ .polygonOffset = mPolygonOffset };
+        PolygonOffset* const pPipelinePolygonOffset =
+                mPolygonOffsetOverride ? &dummyPolyOffset : &pipeline.polygonOffset;
+
         Handle<HwUniformBuffer> uboHandle = scene.getRenderableUBO();
         FMaterialInstance const* UTILS_RESTRICT mi = nullptr;
         FMaterial const* UTILS_RESTRICT ma = nullptr;
@@ -185,7 +182,7 @@ void RenderPass::recordDriverCommands(FEngine::DriverApi& driver, FScene& scene,
             if (UTILS_UNLIKELY(mi != info.mi)) {
                 // this is always taken the first time
                 mi = info.mi;
-                pipeline.polygonOffset = mi->getPolygonOffset();
+                *pPipelinePolygonOffset = mi->getPolygonOffset();
                 ma = mi->getMaterial();
                 mi->use(driver);
             }

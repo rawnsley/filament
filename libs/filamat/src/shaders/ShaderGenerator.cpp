@@ -38,10 +38,11 @@ namespace filamat {
 
 static const char* getShadingDefine(filament::Shading shading) noexcept {
     switch (shading) {
-        case filament::Shading::LIT:         return "SHADING_MODEL_LIT";
-        case filament::Shading::UNLIT:       return "SHADING_MODEL_UNLIT";
-        case filament::Shading::SUBSURFACE:  return "SHADING_MODEL_SUBSURFACE";
-        case filament::Shading::CLOTH:       return "SHADING_MODEL_CLOTH";
+        case filament::Shading::LIT:                 return "SHADING_MODEL_LIT";
+        case filament::Shading::UNLIT:               return "SHADING_MODEL_UNLIT";
+        case filament::Shading::SUBSURFACE:          return "SHADING_MODEL_SUBSURFACE";
+        case filament::Shading::CLOTH:               return "SHADING_MODEL_CLOTH";
+        case filament::Shading::SPECULAR_GLOSSINESS: return "SHADING_MODEL_SPECULAR_GLOSSINESS";
     }
 }
 
@@ -246,7 +247,7 @@ const std::string ShaderGenerator::createFragmentProgram(filament::backend::Shad
     cg.generateDefine(fs, "HAS_SHADOW_MULTIPLIER", material.hasShadowMultiplier);
 
     // material defines
-    cg.generateDefine(fs, "MATERIAL_IS_DOUBLE_SIDED", material.isDoubleSided);
+    cg.generateDefine(fs, "MATERIAL_HAS_DOUBLE_SIDED_CAPABILITY", material.hasDoubleSidedCapability);
     switch (material.blendingMode) {
         case BlendingMode::OPAQUE:
             cg.generateDefine(fs, "BLEND_MODE_OPAQUE", true);
@@ -310,11 +311,6 @@ const std::string ShaderGenerator::createFragmentProgram(filament::backend::Shad
     cg.generateGetters(fs, ShaderType::FRAGMENT);
     cg.generateCommonMaterial(fs, ShaderType::FRAGMENT);
     cg.generateParameters(fs, ShaderType::FRAGMENT);
-
-    if (material.blendingMode == BlendingMode::MASKED) {
-        cg.generateFunction(fs, "float", "getMaskThreshold",
-                "    return materialParams.maskThreshold;");
-    }
 
     // shading model
     if (variant.isDepthPass()) {

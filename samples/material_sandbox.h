@@ -34,14 +34,16 @@ constexpr uint8_t MATERIAL_MODEL_UNLIT =       0;
 constexpr uint8_t MATERIAL_MODEL_LIT =         1;
 constexpr uint8_t MATERIAL_MODEL_SUBSURFACE =  2;
 constexpr uint8_t MATERIAL_MODEL_CLOTH =       3;
+constexpr uint8_t MATERIAL_MODEL_SPECGLOSS =   4;
 
 constexpr uint8_t MATERIAL_UNLIT =       0;
 constexpr uint8_t MATERIAL_LIT =         1;
 constexpr uint8_t MATERIAL_SUBSURFACE =  2;
 constexpr uint8_t MATERIAL_CLOTH =       3;
-constexpr uint8_t MATERIAL_TRANSPARENT = 4;
-constexpr uint8_t MATERIAL_FADE =        5;
-constexpr uint8_t MATERIAL_COUNT =       6;
+constexpr uint8_t MATERIAL_SPECGLOSS =   4;
+constexpr uint8_t MATERIAL_TRANSPARENT = 5;
+constexpr uint8_t MATERIAL_FADE =        6;
+constexpr uint8_t MATERIAL_COUNT =       7;
 
 constexpr uint8_t BLENDING_OPAQUE      = 0;
 constexpr uint8_t BLENDING_TRANSPARENT = 1;
@@ -60,6 +62,8 @@ struct SandboxParameters {
     float anisotropy = 0.0f;
     float thickness = 1.0f;
     float subsurfacePower = 12.234f;
+    float glossiness = 0.0f;
+    filament::sRGBColor specularColor = {0.0f, 0.0f, 0.0f};
     filament::sRGBColor subsurfaceColor = {0.0f};
     filament::sRGBColor sheenColor = {0.83f, 0.0f, 0.0f};
     int currentMaterialModel = MATERIAL_MODEL_LIT;
@@ -80,6 +84,11 @@ struct SandboxParameters {
     bool tonemapping = true;
     bool msaa = false;
     bool dithering = true;
+    bool stableShadowMap = false;
+    float normalBias = 1.0;
+    float constantBias = 0.001;
+    float polygonOffsetConstant = 0.5;
+    float polygonOffsetSlope = 2.0;
 };
 
 inline void createInstances(SandboxParameters& params, filament::Engine& engine) {
@@ -121,11 +130,17 @@ inline void createInstances(SandboxParameters& params, filament::Engine& engine)
     params.materialInstance[MATERIAL_CLOTH] =
             params.material[MATERIAL_CLOTH]->createInstance();
 
+    params.material[MATERIAL_SPECGLOSS] = Material::Builder()
+            .package(RESOURCES_SANDBOXSPECGLOSS_DATA, RESOURCES_SANDBOXSPECGLOSS_SIZE)
+            .build(engine);
+    params.materialInstance[MATERIAL_SPECGLOSS] =
+            params.material[MATERIAL_SPECGLOSS]->createInstance();
+
     params.light = EntityManager::get().create();
     LightManager::Builder(LightManager::Type::SUN)
             .color(Color::toLinear<ACCURATE>(params.lightColor))
             .intensity(params.lightIntensity)
-            .direction(params.lightDirection)
+            .direction(normalize(params.lightDirection))
             .castShadows(true)
             .sunAngularRadius(params.sunAngularRadius)
             .sunHaloSize(params.sunHaloSize)
@@ -157,6 +172,15 @@ inline filament::MaterialInstance* updateInstances(SandboxParameters& params,
             materialInstance->setParameter("alpha", params.alpha);
         }
     }
+    if (params.currentMaterialModel == MATERIAL_MODEL_SPECGLOSS) {
+        materialInstance->setParameter("baseColor", RgbType::sRGB, params.color);
+        materialInstance->setParameter("glossiness", params.glossiness);
+        materialInstance->setParameter("specularColor", params.specularColor);
+        materialInstance->setParameter("reflectance", params.reflectance);
+        materialInstance->setParameter("clearCoat", params.clearCoat);
+        materialInstance->setParameter("clearCoatRoughness", params.clearCoatRoughness);
+        materialInstance->setParameter("anisotropy", params.anisotropy);
+    }
     if (params.currentMaterialModel == MATERIAL_MODEL_SUBSURFACE) {
         materialInstance->setParameter("baseColor", RgbType::sRGB, params.color);
         materialInstance->setParameter("roughness", params.roughness);
@@ -173,14 +197,6 @@ inline filament::MaterialInstance* updateInstances(SandboxParameters& params,
         materialInstance->setParameter("subsurfaceColor", RgbType::sRGB, params.subsurfaceColor);
     }
 
-    auto& lcm = engine.getLightManager();
-    auto lightInstance = lcm.getInstance(params.light);
-    lcm.setColor(lightInstance, params.lightColor);
-    lcm.setIntensity(lightInstance, params.lightIntensity);
-    lcm.setDirection(lightInstance, params.lightDirection);
-    lcm.setSunAngularRadius(lightInstance, params.sunAngularRadius);
-    lcm.setSunHaloSize(lightInstance, params.sunHaloSize);
-    lcm.setSunHaloFalloff(lightInstance, params.sunHaloFalloff);
     return materialInstance;
 }
 

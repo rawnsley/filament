@@ -36,6 +36,8 @@
 #include <utils/Entity.h>
 #include <utils/NameComponentManager.h>
 
+#include <math/vec3.h>
+
 namespace gltfio {
 
 /**
@@ -62,11 +64,16 @@ public:
     /**
      * Sets or changes the asset that is being viewed.
      *
-     * The viewer automatically adds all the asset's entities into the scene. The viewer does not
-     * claim ownership over the asset or its entities. Clients should use AssetLoader and
-     * ResourceLoader to load an asset before passing it in.
+     * This adds all the asset's entities into the scene and optionally transforms the asset to make
+     * it fit into a unit cube at the origin. The viewer does not claim ownership over the asset or
+     * its entities. Clients should use AssetLoader and ResourceLoader to load an asset before
+     * passing it in.
+     *
+     * @param asset The asset to view.
+     * @param names Optional name manager used to add glTF mesh names to nodes.
+     * @param scale Adds a transform to the root to fit the asset into a unit cube at the origin.
      */
-    void setAsset(FilamentAsset* asset, utils::NameComponentManager* names);
+    void setAsset(FilamentAsset* asset, utils::NameComponentManager* names, bool scale);
 
     /**
      * Removes the current asset from the viewer.
@@ -128,6 +135,8 @@ private:
     bool mResetAnimation = true;
     float mIblIntensity = 30000.0f;
     float mIblRotation = 0.0f;
+    float mSunlightIntensity = 100000.0f;
+    filament::math::float3 mSunlightDirection = {0.6, -1.0, -0.8};
     bool mShowWireframe = false;
     bool mEnableSunlight = true;
     bool mEnableDithering = true;
@@ -152,6 +161,7 @@ filament::math::mat4f fitIntoUnitCube(const filament::Aabb& bounds);
 #include <math/vec3.h>
 
 #include <imgui.h>
+#include <filagui/ImGuiExtensions.h>
 
 #include <vector>
 
@@ -177,8 +187,8 @@ SimpleViewer::SimpleViewer(filament::Engine* engine, filament::Scene* scene, fil
     using namespace filament;
     LightManager::Builder(LightManager::Type::SUN)
         .color(Color::toLinear<ACCURATE>({0.98, 0.92, 0.89}))
-        .intensity(100000.0)
-        .direction({0.6, -1.0, -0.8})
+        .intensity(mSunlightIntensity)
+        .direction(normalize(mSunlightDirection))
         .castShadows(true)
         .sunAngularRadius(1.9)
         .sunHaloSize(10.0)
@@ -193,16 +203,18 @@ SimpleViewer::~SimpleViewer() {
     mEngine->destroy(mSunlight);
 }
 
-void SimpleViewer::setAsset(FilamentAsset* asset, utils::NameComponentManager* names) {
+void SimpleViewer::setAsset(FilamentAsset* asset, utils::NameComponentManager* names, bool scale) {
     using namespace filament::math;
     removeAsset();
     mAsset = asset;
     mAnimator = asset->getAnimator();
     mNames = names;
-    auto& tcm = mEngine->getTransformManager();
-    auto root = tcm.getInstance(mAsset->getRoot());
-    mat4f transform = fitIntoUnitCube(mAsset->getBoundingBox());
-    tcm.setTransform(root, transform);
+    if (scale) {
+        auto& tcm = mEngine->getTransformManager();
+        auto root = tcm.getInstance(mAsset->getRoot());
+        mat4f transform = fitIntoUnitCube(mAsset->getBoundingBox());
+        tcm.setTransform(root, transform);
+    }
     mScene->addEntities(mAsset->getEntities(), mAsset->getEntityCount());
 }
 
@@ -249,6 +261,7 @@ void SimpleViewer::updateUserInterface() {
 
     auto& tm = mEngine->getTransformManager();
     auto& rm = mEngine->getRenderableManager();
+    auto& lm = mEngine->getLightManager();
 
     // Show a common set of UI widgets for all renderables.
     auto renderableTreeItem = [this, &rm](utils::Entity entity) {
@@ -344,14 +357,19 @@ void SimpleViewer::updateUserInterface() {
     mView->setAntiAliasing(mEnableFxaa ? View::AntiAliasing::FXAA : View::AntiAliasing::NONE);
     mView->setSampleCount(mEnableMsaa ? 4 : 1);
 
-    if (ImGui::CollapsingHeader("Light")) {
+    if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::SliderFloat("IBL intensity", &mIblIntensity, 0.0f, 100000.0f);
         ImGui::SliderAngle("IBL rotation", &mIblRotation);
-        ImGui::Checkbox("Sunlight", &mEnableSunlight);
+        ImGui::SliderFloat("Sun intensity", &mSunlightIntensity, 50000.0, 150000.0f);
+        ImGuiExt::DirectionWidget("Sun direction", &mSunlightDirection.x);
+        ImGui::Checkbox("Enable sunlight", &mEnableSunlight);
     }
 
     if (mEnableSunlight) {
         mScene->addEntity(mSunlight);
+        auto sun = lm.getInstance(mSunlight);
+        lm.setIntensity(sun, mSunlightIntensity);
+        lm.setDirection(sun, normalize(mSunlightDirection));
     } else {
         mScene->remove(mSunlight);
     }

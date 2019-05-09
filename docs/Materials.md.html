@@ -59,6 +59,7 @@ Filament materials can use one of the following material models:
 - Subsurface
 - Cloth
 - Unlit
+- Specular glossiness (legacy)
 
 ## Lit model
 
@@ -522,6 +523,30 @@ Figure [materialUnlit] shows an example of the unlit material model
 
 ![Figure [materialUnlit]: The unlit model is used to render debug information](images/screenshot_unlit.jpg)
 
+## Specular glossiness
+
+This alternative lighting model exists to comply with legacy standards. Since it is not a
+physically-based formulation, we do not recommend using it except when loading legacy assets.
+
+This model encompasses the parameters previously defined for the standard lit mode except for
+_metallic_, _reflectance_, and _roughness_. It adds parameters for _specularColor_ and _glossiness_.
+
+Parameter             |      Definition
+---------------------:|:---------------------
+**baseColor**         | Surface diffuse color
+**specularColor**     | Specular tint (defaults to black)
+**glossiness**        | Glossiness (defaults to 0.0)
+[Table [glossinessProperties]: Properties of the specular-glossiness shading model]
+
+The type and range of each property is described in table [glossinessPropertiesTypes].
+
+       Property       |   Type   |            Range         |           Note
+---------------------:|:--------:|:------------------------:|:-------------------------
+**baseColor**         | float4   |  [0..1]                  | Pre-multiplied linear RGB
+**specularColor**     | float3   |  [0..1]                  | Linear RGB
+**glossiness**        | float    |  [0..1]                  | Inverse of roughness
+[Table [glossinessPropertiesTypes]: Range and type of the specular-glossiness model's properties]
+
 # Material definitions
 
 A material definition is a text file that describes all the information required by a material:
@@ -656,7 +681,7 @@ Type
 :    `string`
 
 Value
-:     Any of `lit`, `subsurface`, `cloth`, `unlit`. Defaults to `lit`.
+:     Any of `lit`, `subsurface`, `cloth`, `unlit`, `specularGlossiness`. Defaults to `lit`.
 
 Description
 :     Selects the material model as described in the Material models section.
@@ -1029,9 +1054,10 @@ Value
 :     `true` or `false`. Defaults to `false`.
 
 Description
-:     Enables or disables two-sided rendering. When set to `true`, `culling` is automatically set to
-      `none`; if the triangle is back-facing, the triangle's normal is automatically flipped to
-      become front-facing.
+:     Enables two-sided rendering and its capability to be toggled at run time. When set to `true`,
+      `culling` is automatically set to `none`; if the triangle is back-facing, the triangle's
+      normal is flipped to become front-facing. When explicitly set to `false`, this allows the
+      doubleSided property to be toggled at run time.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ JSON
 material {
@@ -1386,8 +1412,8 @@ struct MaterialInputs {
 
     // no other field is available with the unlit shading model
     float  roughness;           // default: 1.0
-    float  metallic;            // default: 0.0, not available with cloth
-    float  reflectance;         // default: 0.5, not available with cloth
+    float  metallic;            // default: 0.0, not available with cloth or specularGlossiness
+    float  reflectance;         // default: 0.5, not available with cloth or specularGlossiness
     float  ambientOcclusion;    // default: 0.0
 
     // not available when the shading model is subsurface or cloth
@@ -1405,6 +1431,10 @@ struct MaterialInputs {
     // only available when the shading model is cloth
     float3 sheenColor;          // default: sqrt(baseColor)
     float3 subsurfaceColor;     // default: float3(0.0)
+
+    // only available when the shading model is specularGlossiness
+    float3 specularColor;       // default: float3(0.0)
+    float  glossiness;          // default: 0.0
 
     // not available when the shading model is unlit
     // must be set before calling prepareMaterial()

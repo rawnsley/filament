@@ -2,7 +2,7 @@
 // Shadowing configuration
 //------------------------------------------------------------------------------
 
-#define SHADOW_SAMPLING_HARD              0
+#define SHADOW_SAMPLING_PCF_HARD          0
 #define SHADOW_SAMPLING_PCF_LOW           1
 #define SHADOW_SAMPLING_PCF_MEDIUM        2
 #define SHADOW_SAMPLING_PCF_HIGH          3
@@ -41,10 +41,14 @@ vec2 computeReceiverPlaneDepthBias(const vec3 position) {
     // see: GDC '06: Shadow Mapping: GPU-based Tips and Techniques
     vec2 bias;
 #if SHADOW_RECEIVER_PLANE_DEPTH_BIAS == SHADOW_RECEIVER_PLANE_DEPTH_BIAS_ENABLED
-    vec3 dx = dFdx(position);
-    vec3 dy = dFdy(position);
-    bias = vec2(dy.y * dx.z - dx.y * dy.z, dx.x * dy.z - dy.x * dx.z);
-    bias *= 1.0 / ((dx.x * dy.y) - (dx.y * dy.x));
+    vec3 du = dFdx(position);
+    vec3 dv = dFdy(position);
+
+    // Chain rule we use:
+    //     | du.x   du.y |^-T      |  dv.y  -du.y |T    |  dv.y  -dv.x |
+    // D * | dv.x   dv.y |     =   | -dv.x   du.x |  =  | -du.y   du.x |
+
+    bias = inverse(mat2(du.xy, dv.xy)) * vec2(du.z, dv.z);
 #else
     bias = vec2(0.0);
 #endif
@@ -53,7 +57,8 @@ vec2 computeReceiverPlaneDepthBias(const vec3 position) {
 
 float samplingBias(float depth, const vec2 rpdb, const vec2 texelSize) {
 #if SHADOW_SAMPLING_ERROR == SHADOW_SAMPLING_ERROR_ENABLED
-    float samplingError = min(dot(texelSize, abs(rpdb)), 0.01);
+    // note: if filtering is set to NEAREST, the 2.0 factor below can be changed to 1.0
+    float samplingError = min(2.0 * dot(texelSize, abs(rpdb)), 0.01);
     depth -= samplingError;
 #endif
     return depth;
@@ -68,7 +73,7 @@ float sampleDepth(const lowp sampler2DShadow map, vec2 base, vec2 dudv, float de
     return texture(map, vec3(base + dudv, depth));
 }
 
-#if SHADOW_SAMPLING_METHOD == SHADOW_SAMPLING_HARD
+#if SHADOW_SAMPLING_METHOD == SHADOW_SAMPLING_PCF_HARD
 float ShadowSample_Hard(const lowp sampler2DShadow map, const vec2 size, const vec3 position) {
     vec2 rpdb = computeReceiverPlaneDepthBias(position);
     float depth = samplingBias(position.z, rpdb, vec2(1.0) / size);
@@ -234,7 +239,7 @@ float ShadowSample_PCF_High(const lowp sampler2DShadow map, const vec2 size, vec
  */
 float shadow(const lowp sampler2DShadow shadowMap, const vec3 shadowPosition) {
     vec2 size = vec2(textureSize(shadowMap, 0));
-#if SHADOW_SAMPLING_METHOD == SHADOW_SAMPLING_HARD
+#if SHADOW_SAMPLING_METHOD == SHADOW_SAMPLING_PCF_HARD
     return ShadowSample_Hard(shadowMap, size, shadowPosition);
 #elif SHADOW_SAMPLING_METHOD == SHADOW_SAMPLING_PCF_LOW
     return ShadowSample_PCF_Low(shadowMap, size, shadowPosition);
