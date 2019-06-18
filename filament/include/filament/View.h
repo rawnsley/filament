@@ -35,6 +35,7 @@ namespace filament {
 
 class Camera;
 class MaterialInstance;
+class RenderTarget;
 class Scene;
 
 /**
@@ -140,6 +141,25 @@ public:
     };
 
     /**
+     * Options for Ambient Occlusion
+     * @see setAmbientOcclusion()
+     */
+    struct AmbientOcclusionOptions {
+        float radius = 0.3f;    //!< Ambient Occlusion radius in meters, between 0 and ~10.
+        float bias = 0.005f;    //!< Self-occlusion bias in meters. Use to avoid self-occlusion. Between 0 and a few mm.
+        float power = 0.0f;     //!< Controls ambient occlusion's contrast. Between 0 (linear) and 1 (squared)
+        float resolution = 0.5; //!< How each dimension of the AO buffer is scaled. Must be positive and <= 1.
+    };
+
+    /**
+     * List of available ambient occlusion techniques
+    */
+    enum class AmbientOcclusion : uint8_t {
+        NONE = 0,       //!< No Ambient Occlusion
+        SSAO = 1        //!< Basic, sampling SSAO
+    };
+
+    /**
      * List of available post-processing anti-aliasing techniques.
      * @see setAntiAliasing, getAntiAliasing
      */
@@ -170,6 +190,34 @@ public:
         LINEAR = 0,     //!< Linear tone mapping (i.e. no tone mapping)
         ACES = 1,       //!< ACES tone mapping
     };
+
+    /**
+     * Activates or deactivates ambient occlusion.
+     *
+     * @param ambientOcclusion Type of ambient occlusion to use.
+     */
+    void setAmbientOcclusion(AmbientOcclusion ambientOcclusion) noexcept;
+
+    /**
+     * Query the type of ambient occlusion active for this View.
+     *
+     * @return ambient occlusion type.
+     */
+    AmbientOcclusion getAmbientOcclusion() const noexcept;
+
+    /**
+     * Sets ambient occlusion options.
+     *
+     * @param options Options for ambient occlusion.
+     */
+    void setAmbientOcclusionOptions(AmbientOcclusionOptions const& options) noexcept;
+
+    /**
+     * Gets the ambient occlusion options.
+     *
+     * @return ambient occlusion options currently set.
+     */
+    AmbientOcclusionOptions const& getAmbientOcclusionOptions() const noexcept;
 
     /**
      * Sets whether this view is rendered with or without a depth pre-pass.
@@ -318,7 +366,7 @@ public:
      *
      * Renderable objects can have one or several layers associated to them. Layers are
      * represented with an 8-bits bitmask, where each bit corresponds to a layer.
-     * @see Renderable::setLayer().
+     * @see RenderableManager::setLayerMask().
      *
      * This call sets which of those layers are visible, Renderable in invisible layers won't be
      * rendered.
@@ -344,6 +392,18 @@ public:
     void setShadowsEnabled(bool enabled) noexcept;
 
     /**
+     * Specifies an offscreen render target to render into.
+     *
+     * By default, the view's associated render target is nullptr, which corresponds to the
+     * SwapChain associated with the engine.
+     *
+     * @param renderTarget Render target associated with view, or nullptr for the swap chain.
+     * @param discard Buffers that need to be discarded before rendering.
+     */
+    void setRenderTarget(RenderTarget* renderTarget,
+            TargetBufferFlags discard = TargetBufferFlags::ALL) noexcept;
+
+    /**
      * Specifies which buffers can be discarded before rendering.
      *
      * For performance reasons, the default is to discard all buffers, which is generally
@@ -353,9 +413,6 @@ public:
      * it is necessary to indicate that the color buffer cannot be discarded.
      *
      * @param discard Buffers that need to be discarded before rendering.
-     *
-     * @note
-     * In the future this API will also allow to set the render target.
      */
     void setRenderTarget(TargetBufferFlags discard = TargetBufferFlags::ALL) noexcept;
 

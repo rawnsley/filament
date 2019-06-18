@@ -73,7 +73,6 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
 
-#define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO
 #define STBI_ONLY_PNG
 #include <stb_image.h>
@@ -695,7 +694,11 @@ class_<TransformManager>("TransformManager")
     /// ::retval:: a transform component that can be passed to `setTransform`.
     .function("getInstance", &TransformManager::getInstance)
 
-    .function("create", &TransformManager::create)
+    .function("create", EMBIND_LAMBDA(void,
+            (TransformManager* self, utils::Entity entity), {
+        self->create(entity);
+    }), allow_raw_pointers())
+
     .function("destroy", &TransformManager::destroy)
     .function("setParent", &TransformManager::setParent)
     .function("getParent", &TransformManager::getParent)
@@ -772,7 +775,7 @@ class_<VertexBuilder>("VertexBuffer$Builder")
             VertexAttribute attr,
             uint8_t bufferIndex,
             VertexBuffer::AttributeType attrType,
-            uint8_t byteOffset,
+            uint32_t byteOffset,
             uint8_t byteStride), {
         return &builder->attribute(attr, bufferIndex, attrType, byteOffset, byteStride); })
     .BUILDER_FUNCTION("vertexCount", VertexBuilder, (VertexBuilder* builder, int count), {
@@ -834,8 +837,11 @@ class_<MaterialInstance>("MaterialInstance")
     .function("setTextureParameter", EMBIND_LAMBDA(void,
             (MaterialInstance* self, std::string name, Texture* value, TextureSampler sampler), {
         self->setParameter(name.c_str(), value, sampler); }), allow_raw_pointers())
-    .function("setColorParameter", EMBIND_LAMBDA(void,
+    .function("setColor3Parameter", EMBIND_LAMBDA(void,
             (MaterialInstance* self, std::string name, RgbType type, filament::math::float3 value), {
+        self->setParameter(name.c_str(), type, value); }), allow_raw_pointers())
+    .function("setColor4Parameter", EMBIND_LAMBDA(void,
+            (MaterialInstance* self, std::string name, RgbaType type, filament::math::float4 value), {
         self->setParameter(name.c_str(), type, value); }), allow_raw_pointers())
     .function("setPolygonOffset", &MaterialInstance::setPolygonOffset)
     .function("setMaskThreshold", &MaterialInstance::setMaskThreshold)

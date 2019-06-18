@@ -29,6 +29,7 @@
 #include "private/backend/DriverApiForward.h"
 
 #include <filament/Renderer.h>
+#include <filament/View.h>
 
 #include <backend/DriverEnums.h>
 #include <backend/Handle.h>
@@ -70,8 +71,8 @@ public:
     void render(FView const* view);
     void renderJob(ArenaScope& arena, FView& view);
 
-    void mirrorFrame(FSwapChain* dstSwapChain, Viewport const& dstViewport, Viewport const& srcViewport,
-                     MirrorFrameFlag flags);
+    void copyFrame(FSwapChain* dstSwapChain, Viewport const& dstViewport,
+            Viewport const& srcViewport, CopyFrameFlag flags);
 
     bool beginFrame(FSwapChain* swapChain);
     void endFrame();
@@ -88,7 +89,9 @@ private:
     friend class Renderer;
     using Command = RenderPass::Command;
 
-    backend::Handle<backend::HwRenderTarget> getRenderTarget() const noexcept { return mRenderTarget; }
+    backend::Handle<backend::HwRenderTarget> getRenderTarget(FView& view) const noexcept;
+
+    RenderPass::CommandTypeFlags getCommandType(View::DepthPrepass prepass) const noexcept;
 
     void recordHighWatermark(size_t watermark) noexcept {
         mCommandsHighWatermark = std::max(mCommandsHighWatermark, watermark);
@@ -121,7 +124,7 @@ private:
     bool mIsRGB16FSupported : 1;
     bool mIsRGB8Supported : 1;
     Epoch mUserEpoch;
-    math::float4 mShaderUserTime;
+    math::float4 mShaderUserTime{};
 
     // per-frame arena for this Renderer
     LinearAllocatorArena& mPerRenderPassArena;

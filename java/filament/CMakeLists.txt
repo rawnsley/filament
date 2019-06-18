@@ -28,14 +28,16 @@ endif()
 # ==================================================================================================
 set(TARGET filament-jni)
 
-include_directories(${JNI_INCLUDE_DIRS})
-
 set(CXX_STANDARD "-std=c++14")
 if (WIN32)
     set(CXX_STANDARD "/std:c++14")
 endif()
 
-set(FILAMENT_DIR ../../android/filament-android)
+set(ANDROID_DIR ../../android)
+set(FILAMENT_DIR ${ANDROID_DIR}/filament-android)
+set(COMMON_DIR ${ANDROID_DIR}/common)
+
+include_directories(${JNI_INCLUDE_DIRS} ${ANDROID_DIR})
 
 set(JNI_SOURCE_FILES
         ${FILAMENT_DIR}/src/main/cpp/Camera.cpp
@@ -52,6 +54,7 @@ set(JNI_SOURCE_FILES
         ${FILAMENT_DIR}/src/main/cpp/NativeSurface.cpp
         ${FILAMENT_DIR}/src/main/cpp/RenderableManager.cpp
         ${FILAMENT_DIR}/src/main/cpp/Renderer.cpp
+        ${FILAMENT_DIR}/src/main/cpp/RenderTarget.cpp
         ${FILAMENT_DIR}/src/main/cpp/Scene.cpp
         ${FILAMENT_DIR}/src/main/cpp/SkyBox.cpp
         ${FILAMENT_DIR}/src/main/cpp/Stream.cpp
@@ -60,11 +63,12 @@ set(JNI_SOURCE_FILES
         ${FILAMENT_DIR}/src/main/cpp/TransformManager.cpp
         ${FILAMENT_DIR}/src/main/cpp/View.cpp
         # Private utils
-        ${FILAMENT_DIR}/src/main/cpp/CallbackUtils.cpp
         ${FILAMENT_DIR}/src/main/cpp/Filament.cpp
-        ${FILAMENT_DIR}/src/main/cpp/NioUtils.cpp
         # Desktop specific
         ${FILAMENT_DIR}/src/main/cpp/nativewindow/JAWTUtils.cpp
+        # Common utils
+        ${COMMON_DIR}/CallbackUtils.cpp
+        ${COMMON_DIR}/NioUtils.cpp
 )
 
 if (LINUX)
@@ -127,6 +131,7 @@ set(JAVA_SOURCE_FILES
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/Platform.java
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/RenderableManager.java
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/Renderer.java
+        ${FILAMENT_JAVA_DIR}/com/google/android/filament/RenderTarget.java
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/Scene.java
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/Skybox.java
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/Stream.java
@@ -137,6 +142,8 @@ set(JAVA_SOURCE_FILES
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/VertexBuffer.java
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/View.java
         ${FILAMENT_JAVA_DIR}/com/google/android/filament/Viewport.java
+        ${FILAMENT_JAVA_DIR}/com/google/android/filament/proguard/UsedByNative.java
+        ${FILAMENT_JAVA_DIR}/com/google/android/filament/proguard/UsedByReflection.java
         # Desktop specific
         src/java/com/google/android/filament/DesktopPlatform.java
         src/java/com/google/android/filament/FilamentCanvas.java

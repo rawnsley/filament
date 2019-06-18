@@ -35,7 +35,7 @@ set_target_properties(smol-v PROPERTIES IMPORTED_LOCATION
         ${FILAMENT_DIR}/lib/${ANDROID_ABI}/libsmol-v.a)
 
 
-include_directories(${FILAMENT_DIR}/include)
+include_directories(.. ${FILAMENT_DIR}/include)
 
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-stack-protector")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-rtti")
@@ -63,6 +63,7 @@ add_library(filament-jni SHARED
       src/main/cpp/MathUtils.cpp
       src/main/cpp/RenderableManager.cpp
       src/main/cpp/Renderer.cpp
+      src/main/cpp/RenderTarget.cpp
       src/main/cpp/Scene.cpp
       src/main/cpp/SkyBox.cpp
       src/main/cpp/Stream.cpp
@@ -73,9 +74,10 @@ add_library(filament-jni SHARED
       # Android specific
       src/main/cpp/nativewindow/Android.cpp
       # Private utils
-      src/main/cpp/CallbackUtils.cpp
       src/main/cpp/Filament.cpp
-      src/main/cpp/NioUtils.cpp
+      # Common utils
+      ../common/CallbackUtils.cpp
+      ../common/NioUtils.cpp
 )
 
 target_link_libraries(filament-jni

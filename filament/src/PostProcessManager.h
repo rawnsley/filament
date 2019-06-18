@@ -24,17 +24,24 @@
 #include "fg/FrameGraphResource.h"
 
 #include <backend/DriverEnums.h>
+#include <filament/View.h>
 
 namespace filament {
 
 namespace details {
+class FMaterial;
+class FMaterialInstance;
 class FEngine;
 class FView;
+class RenderPass;
+struct CameraInfo;
 } // namespace details
 
 class PostProcessManager {
 public:
-    void init(details::FEngine& engine) noexcept;
+    explicit PostProcessManager(details::FEngine& engine) noexcept;
+
+    void init() noexcept;
     void terminate(backend::DriverApi& driver) noexcept;
     void setSource(uint32_t viewportWidth, uint32_t viewportHeight,
             backend::Handle<backend::HwTexture> color,
@@ -51,13 +58,65 @@ public:
     FrameGraphResource dynamicScaling(
             FrameGraph& fg, FrameGraphResource input, backend::TextureFormat outFormat) noexcept;
 
+    FrameGraphResource resolve(
+            FrameGraph& fg, FrameGraphResource input) noexcept;
+
+
+    FrameGraphResource ssao(FrameGraph& fg, details::RenderPass& pass,
+            filament::Viewport const& svp,
+            details::CameraInfo const& cameraInfo,
+            View::AmbientOcclusionOptions const& options) noexcept;
+
+    backend::Handle<backend::HwTexture> getNoSSAOTexture() const {
+        return mNoSSAOTexture;
+    }
+
 private:
-    details::FEngine* mEngine = nullptr;
+    details::FEngine& mEngine;
+
+    FrameGraphResource depthPass(FrameGraph& fg, details::RenderPass& pass,
+            uint32_t width, uint32_t height, View::AmbientOcclusionOptions const& options) noexcept;
+
+    FrameGraphResource mipmapPass(FrameGraph& fg, FrameGraphResource input, size_t level) noexcept;
+
+    FrameGraphResource blurPass(FrameGraph& fg,
+            FrameGraphResource input, FrameGraphResource depth, math::int2 axis) noexcept;
 
     // we need only one of these
     mutable UniformBuffer mPostProcessUb;
     backend::Handle<backend::HwSamplerGroup> mPostProcessSbh;
     backend::Handle<backend::HwUniformBuffer> mPostProcessUbh;
+
+    class PostProcessMaterial {
+    public:
+        PostProcessMaterial() noexcept = default;
+        PostProcessMaterial(details::FEngine& engine, uint8_t const* data, size_t size) noexcept;
+
+        PostProcessMaterial(PostProcessMaterial const& rhs) = delete;
+        PostProcessMaterial& operator=(PostProcessMaterial const& rhs) = delete;
+
+        PostProcessMaterial(PostProcessMaterial&& rhs) noexcept;
+        PostProcessMaterial& operator=(PostProcessMaterial&& rhs) noexcept;
+
+        ~PostProcessMaterial();
+
+        void terminate(details::FEngine& engine) noexcept;
+
+        details::FMaterial* getMaterial() const { return mMaterial; }
+        details::FMaterialInstance* getMaterialInstance() const { return mMaterialInstance; }
+        backend::Handle<backend::HwProgram> const& getProgram() const { return mProgram; }
+
+    private:
+        details::FMaterial* mMaterial = nullptr;
+        details::FMaterialInstance* mMaterialInstance = nullptr;
+        backend::Handle<backend::HwProgram> mProgram;
+    };
+
+    PostProcessMaterial mSSAO;
+    PostProcessMaterial mMipmapDepth;
+    PostProcessMaterial mBlur;
+
+    backend::Handle<backend::HwTexture> mNoSSAOTexture;
 };
 
 } // namespace filament

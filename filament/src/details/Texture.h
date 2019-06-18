@@ -50,6 +50,7 @@ public:
     size_t getLevels() const noexcept { return mLevels; }
     Sampler getTarget() const noexcept { return mTarget; }
     InternalFormat getFormat() const noexcept { return mFormat; }
+    Usage getUsage() const noexcept { return mUsage; }
     bool isRgbm() const noexcept { return mRgbm; }
 
     void setImage(FEngine& engine, size_t level,
@@ -73,6 +74,10 @@ public:
     FStream const* getStream() const noexcept { return mStream; }
 
     static size_t getFormatSize(InternalFormat format) noexcept;
+
+    static inline size_t valueForLevel(size_t level, size_t value) {
+        return std::max(size_t(1), value >> level);
+    }
 
 private:
     friend class Texture;

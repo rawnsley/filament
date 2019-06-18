@@ -75,10 +75,14 @@ public:
     filament::Material const* getDefaultMaterial() const noexcept { return mDefaultMaterial; }
     filament::Material const* getTransparentMaterial() const noexcept { return mTransparentMaterial; }
     IBL* getIBL() const noexcept { return mIBL.get(); }
+    filament::View* getGuiView() const noexcept;
 
     void close() { mClosed = true; }
 
     void setSidebarWidth(int width) { mSidebarWidth = width; }
+    void setWindowTitle(const char* title) { mWindowTitle = title; }
+
+    void addOffscreenView(filament::View* view) { mOffscreenViews.push_back(view); }
 
     size_t getSkippedFrameCount() const { return mSkippedFrames; }
 
@@ -211,6 +215,8 @@ private:
     DropCallback mDropHandler;
     int mSidebarWidth = 0;
     size_t mSkippedFrames = 0;
+    std::string mWindowTitle;
+    std::vector<filament::View*> mOffscreenViews;
 };
 
 #endif // TNT_FILAMENT_SAMPLE_FILAMENTAPP_H

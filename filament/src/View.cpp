@@ -23,6 +23,7 @@
 #include "details/IndirectLight.h"
 #include "details/MaterialInstance.h"
 #include "details/Renderer.h"
+#include "details/RenderTarget.h"
 #include "details/Scene.h"
 #include "details/Skybox.h"
 
@@ -32,14 +33,15 @@
 #include <private/filament/UibGenerator.h>
 
 #include <utils/Allocator.h>
-#include <utils/Systrace.h>
 #include <utils/Profiler.h>
 #include <utils/Slice.h>
+#include <utils/Systrace.h>
 
 #include <math/scalar.h>
 #include <math/fast.h>
 
 #include <memory>
+
 
 using namespace filament::math;
 using namespace utils;
@@ -337,7 +339,7 @@ void FView::prepareLighting(FEngine& engine, FEngine::DriverApi& driver, ArenaSc
 
     // IBL
     FIndirectLight const* const ibl = scene->getIndirectLight();
-    if (ibl) {
+    if (UTILS_LIKELY(ibl)) {
         u.setUniform(offsetof(PerViewUib, iblLuminance), ibl->getIntensity() * exposure);
         u.setUniformArray(offsetof(PerViewUib, iblSH), ibl->getSH(), 9);
         if (ibl->getReflectionMap()) {
@@ -348,8 +350,9 @@ void FView::prepareLighting(FEngine& engine, FEngine::DriverApi& driver, ArenaSc
                     { ibl->getReflectionMap(), reflectionSamplerParams });
         }
     } else {
-        u.setUniform(offsetof(PerViewUib, iblLuminance),
-                FIndirectLight::DEFAULT_INTENSITY * exposure);
+        FSkybox const* const skybox = scene->getSkybox();
+        const float intensity = skybox ? skybox->getIntensity() : FIndirectLight::DEFAULT_INTENSITY;
+        u.setUniform(offsetof(PerViewUib, iblLuminance), intensity * exposure);
     }
 
     // Directional light (always at index 0)
@@ -606,7 +609,7 @@ void FView::prepareCamera(const CameraInfo& camera, const filament::Viewport& vi
     const mat4f projectionMatrix(camera.projection);
 
     const mat4f clipFromView(projectionMatrix);
-    const mat4f viewFromClip(Camera::inverseProjection(clipFromView));
+    const mat4f viewFromClip(inverse(clipFromView));
     const mat4f clipFromWorld(clipFromView * viewFromWorld);
     const mat4f worldFromClip(worldFromView * viewFromClip);
 
@@ -624,6 +627,16 @@ void FView::prepareCamera(const CameraInfo& camera, const filament::Viewport& vi
     u.setUniform(offsetof(PerViewUib, origin), float2{ viewport.left, viewport.bottom });
 
     u.setUniform(offsetof(PerViewUib, cameraPosition), float3{camera.getPosition()});
+}
+
+void FView::prepareSSAO(Handle<HwTexture> ssao) const noexcept {
+    SamplerParams params;
+    params.filterMag = SamplerMagFilter::LINEAR;
+    mPerViewSb.setSampler(PerViewSib::SSAO, ssao, params);
+}
+
+void FView::cleanupSSAO() const noexcept {
+    mPerViewSb.setSampler(PerViewSib::SSAO, {}, {});
 }
 
 void FView::froxelize(FEngine& engine) const noexcept {
@@ -839,6 +852,10 @@ void View::setShadowsEnabled(bool enabled) noexcept {
     upcast(this)->setShadowsEnabled(enabled);
 }
 
+void View::setRenderTarget(RenderTarget* renderTarget, TargetBufferFlags discard) noexcept {
+    upcast(this)->setRenderTarget(upcast(renderTarget), discard);
+}
+
 void View::setRenderTarget(TargetBufferFlags discard) noexcept {
     upcast(this)->setRenderTarget(discard);
 }
@@ -913,6 +930,22 @@ void View::setDepthPrepass(View::DepthPrepass prepass) noexcept {
 
 void View::setDynamicLightingOptions(float zLightNear, float zLightFar) noexcept {
     upcast(this)->setDynamicLightingOptions(zLightNear, zLightFar);
+}
+
+void View::setAmbientOcclusion(View::AmbientOcclusion ambientOcclusion) noexcept {
+    upcast(this)->setAmbientOcclusion(ambientOcclusion);
+}
+
+View::AmbientOcclusion View::getAmbientOcclusion() const noexcept {
+    return upcast(this)->getAmbientOcclusion();
+}
+
+void View::setAmbientOcclusionOptions(View::AmbientOcclusionOptions const& options) noexcept {
+    upcast(this)->setAmbientOcclusionOptions(options);
+}
+
+View::AmbientOcclusionOptions const& View::getAmbientOcclusionOptions() const noexcept {
+    return upcast(this)->getAmbientOcclusionOptions();
 }
 
 
