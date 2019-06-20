@@ -193,6 +193,11 @@ MaterialBuilder& MaterialBuilder::require(filament::VertexAttribute attribute) n
     return *this;
 }
 
+MaterialBuilder& MaterialBuilder::materialDomain(MaterialDomain materialDomain) noexcept {
+    mMaterialDomain = materialDomain;
+    return *this;
+}
+
 MaterialBuilder& MaterialBuilder::blending(BlendingMode blending) noexcept {
     mBlendingMode = blending;
     return *this;
@@ -272,11 +277,13 @@ MaterialBuilder& MaterialBuilder::flipUV(bool flipUV) noexcept {
 
 MaterialBuilder& MaterialBuilder::multiBounceAmbientOcclusion(bool multiBounceAO) noexcept {
     mMultiBounceAO = multiBounceAO;
+    mMultiBounceAOSet = true;
     return *this;
 }
 
 MaterialBuilder& MaterialBuilder::specularAmbientOcclusion(bool specularAO) noexcept {
     mSpecularAO = specularAO;
+    mSpecularAOSet = true;
     return *this;
 }
 
@@ -368,7 +375,9 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
     info.shading = mShading;
     info.hasShadowMultiplier = mShadowMultiplier;
     info.multiBounceAO = mMultiBounceAO;
+    info.multiBounceAOSet = mMultiBounceAOSet;
     info.specularAO = mSpecularAO;
+    info.specularAOSet = mSpecularAOSet;
 }
 
 bool MaterialBuilder::findProperties() noexcept {
@@ -652,6 +661,7 @@ void MaterialBuilder::writeChunks(ChunkContainer& container, MaterialInfo& info)
     container.addSimpleChild<const char*>(ChunkType::MaterialName, mMaterialName.c_str_safe());
     container.addSimpleChild<uint8_t>(ChunkType::MaterialShading, static_cast<uint8_t>(mShading));
     container.addSimpleChild<uint8_t>(ChunkType::MaterialBlendingMode, static_cast<uint8_t>(mBlendingMode));
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialDomain, static_cast<uint8_t>(mMaterialDomain));
 
     if (mBlendingMode == BlendingMode::MASKED) {
         container.addSimpleChild<float>(ChunkType::MaterialMaskThreshold, mMaskThreshold);

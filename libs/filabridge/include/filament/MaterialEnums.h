@@ -26,7 +26,7 @@
 
 namespace filament {
 
-static constexpr size_t MATERIAL_VERSION = 3;
+static constexpr size_t MATERIAL_VERSION = 4;
 
 /**
  * Supported shading models
@@ -116,6 +116,14 @@ enum VertexAttribute : uint8_t {
     BONE_INDICES    = 5, //!< indices of 4 bones, as unsigned integers (uvec4)
     BONE_WEIGHTS    = 6, //!< weights of the 4 bones (normalized float4)
     // this is limited by driver::MAX_VERTEX_ATTRIBUTE_COUNT
+};
+
+/**
+ * Material domains
+ */
+enum MaterialDomain : uint8_t {
+    SURFACE         = 0, //!< shaders applied to renderables
+    POST_PROCESS    = 1, //!< shaders applied to rendered buffers
 };
 
 // can't really use std::underlying_type<AttributeIndex>::type because the driver takes a uint32_t

@@ -213,6 +213,17 @@ bool ShaderGenerator::hasCustomDepthShader() const noexcept {
     return false;
 }
 
+static bool isMobileTarget(filament::backend::ShaderModel model) {
+    switch (model) {
+        case ShaderModel::UNKNOWN:
+            return false;
+        case ShaderModel::GL_ES_30:
+            return true;
+        case ShaderModel::GL_CORE_41:
+            return false;
+    }
+}
+
 const std::string ShaderGenerator::createFragmentProgram(filament::backend::ShaderModel shaderModel,
         MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetLanguage targetLanguage,
         MaterialInfo const& material, uint8_t variantKey,
@@ -226,7 +237,6 @@ const std::string ShaderGenerator::createFragmentProgram(filament::backend::Shad
     cg.generateProlog(fs, ShaderType::FRAGMENT, material.hasExternalSamplers);
 
     cg.generateDefine(fs, "IBL_USE_RGBM", filament::CONFIG_IBL_RGBM);
-    cg.generateDefine(fs, "IBL_MAX_MIP_LEVEL", std::log2f(filament::CONFIG_IBL_SIZE));
 
     // this should probably be a code generation option
     cg.generateDefine(fs, "USE_MULTIPLE_SCATTERING_COMPENSATION", true);
@@ -235,8 +245,13 @@ const std::string ShaderGenerator::createFragmentProgram(filament::backend::Shad
 
     cg.generateDefine(fs, "CLEAR_COAT_IOR_CHANGE", material.clearCoatIorChange);
 
-    cg.generateDefine(fs, "SPECULAR_AMBIENT_OCCLUSION", material.specularAO);
-    cg.generateDefine(fs, "MULTI_BOUNCE_AMBIENT_OCCLUSION", material.multiBounceAO);
+    bool specularAO = material.specularAOSet ?
+            material.specularAO : !isMobileTarget(shaderModel);
+    cg.generateDefine(fs, "SPECULAR_AMBIENT_OCCLUSION", specularAO ? 1u : 0u);
+
+    bool multiBounceAO = material.multiBounceAOSet ?
+            material.multiBounceAO : !isMobileTarget(shaderModel);
+    cg.generateDefine(fs, "MULTI_BOUNCE_AMBIENT_OCCLUSION", multiBounceAO ? 1u : 0u);
 
     // lighting variants
     bool litVariants = lit || material.hasShadowMultiplier;
