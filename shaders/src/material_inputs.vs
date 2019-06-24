@@ -64,7 +64,3 @@ void initMaterialVertex(out MaterialVertexInputs material) {
 #endif
     material.worldPosition = computeWorldPosition();
 }
-
-vec4 getWorldPosition(MaterialVertexInputs material) {
-    return material.worldPosition;
-}
