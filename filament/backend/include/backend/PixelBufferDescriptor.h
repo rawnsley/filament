@@ -85,9 +85,9 @@ public:
             case PixelDataFormat::RGB_INTEGER:
                 n = 3;
                 break;
+            case PixelDataFormat::UNUSED: // shouldn't happen (used to be rgbm)
             case PixelDataFormat::RGBA:
             case PixelDataFormat::RGBA_INTEGER:
-            case PixelDataFormat::RGBM:
                 n = 4;
                 break;
         }
@@ -108,6 +108,11 @@ public:
             case PixelDataType::INT:
             case PixelDataType::FLOAT:
                 bpp *= 4;
+                break;
+            case PixelDataType::UINT_10F_11F_11F_REV:
+                // Special case, format must be RGB and uses 4 bytes
+                assert(format == PixelDataFormat::RGB);
+                bpp = 4;
                 break;
         }
 

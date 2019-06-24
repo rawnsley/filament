@@ -266,7 +266,7 @@ enum class PixelDataFormat : uint8_t {
     RGB_INTEGER,
     RGBA,
     RGBA_INTEGER,
-    RGBM,
+    UNUSED,                 // used to be rgbm
     DEPTH_COMPONENT,
     DEPTH_STENCIL,
     ALPHA
@@ -281,7 +281,8 @@ enum class PixelDataType : uint8_t {
     INT,
     HALF,
     FLOAT,
-    COMPRESSED
+    COMPRESSED,
+    UINT_10F_11F_11F_REV,
 };
 
 enum class CompressedPixelDataType : uint16_t {
@@ -419,7 +420,7 @@ enum class TextureFormat : uint16_t {
     RG16F, RG16UI, RG16I,
     R11F_G11F_B10F,
     RGBA8, SRGB8_A8,RGBA8_SNORM,
-    UNUSED, // The RGBM InternalFormat has been replaced with a flag (Texture::Builder::rgbm)
+    UNUSED, // used to be rgbm
     RGB10_A2, RGBA8UI, RGBA8I,
     DEPTH32F, DEPTH24_STENCIL8, DEPTH32F_STENCIL8,
 

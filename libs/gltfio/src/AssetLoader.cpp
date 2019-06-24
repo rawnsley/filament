@@ -195,6 +195,14 @@ FilamentAsset* FAssetLoader::createAssetFromBinary(const uint8_t* bytes, uint32_
 }
 
 void FAssetLoader::createAsset(const cgltf_data* srcAsset) {
+    for (cgltf_size i = 0; i < srcAsset->extensions_required_count; i++) {
+        if (!strcmp(srcAsset->extensions_required[i], "KHR_draco_mesh_compression")) {
+            slog.e << "KHR_draco_mesh_compression is not supported." << io::endl;
+            mResult = nullptr;
+            return;
+        }
+    }
+
     mResult = new FFilamentAsset(mEngine);
     mResult->mSourceAsset = srcAsset;
     mResult->acquireSourceAsset();
@@ -307,7 +315,7 @@ void FAssetLoader::createRenderable(const cgltf_node* node, Entity entity) {
     for (cgltf_size index = 0; index < nprims; ++index, ++outputPrim, ++inputPrim) {
         RenderableManager::PrimitiveType primType;
         if (!getPrimitiveType(inputPrim->type, &primType)) {
-            slog.e << "Unsupported primitive type." << io::endl;
+            slog.e << "Unsupported primitive type in " << name << io::endl;
         }
 
         // Create a material instance for this primitive or fetch one from the cache.
@@ -353,8 +361,17 @@ void FAssetLoader::createRenderable(const cgltf_node* node, Entity entity) {
        builder.skinning(node->skin->joints_count);
     }
 
+    // Per the spec, glTF models must have valid mix / max annotations for position attributes.
+    // However in practice these can be missing and we should be as robust as other glTF viewers.
+    // If desired, clients can enable the "recomputeBoundingBoxes" feature in ResourceLoader.
+    Box box = Box().set(aabb.min, aabb.max);
+    if (box.isEmpty()) {
+        slog.w << "Missing bounding box in " << name << io::endl;
+        box = Box().set(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max());
+    }
+
     builder
-        .boundingBox(Box().set(aabb.min, aabb.max))
+        .boundingBox(box)
         .culling(true)
         .castShadows(true)
         .receiveShadows(true)
@@ -408,7 +425,7 @@ bool FAssetLoader::createPrimitive(const cgltf_primitive* inPrim, Primitive* out
     VertexBuffer::Builder vbb;
 
     int slot = 0;
-    bool hasUv0 = false, hasUv1 = false, hasVertexColor = false;
+    bool hasUv0 = false, hasUv1 = false, hasVertexColor = false, hasNormals = false;
     uint32_t vertexCount = 0;
     for (cgltf_size aindex = 0; aindex < inPrim->attributes_count; aindex++) {
         const cgltf_attribute& inputAttribute = inPrim->attributes[aindex];
@@ -419,6 +436,7 @@ bool FAssetLoader::createPrimitive(const cgltf_primitive* inPrim, Primitive* out
         if (inputAttribute.type == cgltf_attribute_type_normal) {
             vbb.attribute(VertexAttribute::TANGENTS, slot++, VertexBuffer::AttributeType::SHORT4);
             vbb.normalized(VertexAttribute::TANGENTS);
+            hasNormals = true;
             continue;
         }
 
@@ -520,6 +538,10 @@ bool FAssetLoader::createPrimitive(const cgltf_primitive* inPrim, Primitive* out
             vbb.attribute(VertexAttribute::UV1, slot, VertexBuffer::AttributeType::USHORT2);
             slog.w << "Missing UV1 data in " << name << io::endl;
         }
+    }
+
+    if (inPrim->material && !inPrim->material->unlit && !hasNormals) {
+        slog.w << "Missing normals in " << name << io::endl;
     }
 
     if (needsDummyData) {
