@@ -50,9 +50,9 @@ public:
     };
 
     enum class TargetApi : uint8_t {
-        OPENGL      = 0x01,
-        VULKAN      = 0x02,
-        METAL       = 0x04,
+        OPENGL      = 0x01u,
+        VULKAN      = 0x02u,
+        METAL       = 0x04u,
         ALL         = OPENGL | VULKAN | METAL
     };
 
@@ -367,7 +367,8 @@ private:
 
     bool checkLiteRequirements() noexcept;
 
-    void writeChunks(ChunkContainer& container, MaterialInfo& info) const noexcept;
+    void writeCommonChunks(ChunkContainer& container, MaterialInfo& info) const noexcept;
+    void writeSurfaceChunks(ChunkContainer& container) const noexcept;
 
     bool generateShaders(const std::vector<Variant>& variants, ChunkContainer& container,
             const MaterialInfo& info) const noexcept;

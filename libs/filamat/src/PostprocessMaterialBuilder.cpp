@@ -107,7 +107,7 @@ Package PostprocessMaterialBuilder::build() {
             metalEntry.variant = k;
 
             // Vertex Shader
-            std::string vs = ShaderPostProcessGenerator::createPostProcessVertexProgram(
+            std::string vs = ShaderPostProcessGenerator::createPostProcessVertexProgramOld(
                     shaderModel, targetApi, targetLanguage,
                     filament::PostProcessStage(k), firstSampler);
 
@@ -150,7 +150,7 @@ Package PostprocessMaterialBuilder::build() {
 #endif
 
             // Fragment Shader
-            std::string fs = ShaderPostProcessGenerator::createPostProcessFragmentProgram(
+            std::string fs = ShaderPostProcessGenerator::createPostProcessFragmentProgramOld(
                     shaderModel, targetApi, targetLanguage,
                     filament::PostProcessStage(k), firstSampler);
 
@@ -196,8 +196,10 @@ Package PostprocessMaterialBuilder::build() {
 
     // Emit GLSL chunks
     if (!glslEntries.empty()) {
-        container.addChild<filamat::DictionaryTextChunk>(std::move(glslDictionary), ChunkType::DictionaryGlsl);
-        container.addChild<MaterialTextChunk>(std::move(glslEntries), std::move(glslDictionary), ChunkType::MaterialGlsl);
+        const auto& dictionaryChunk = container.addChild<filamat::DictionaryTextChunk>(
+                std::move(glslDictionary), ChunkType::DictionaryGlsl);
+        container.addChild<MaterialTextChunk>(std::move(glslEntries),
+                dictionaryChunk.getDictionary(), ChunkType::MaterialGlsl);
     }
 
 #ifndef FILAMAT_LITE
@@ -209,14 +211,15 @@ Package PostprocessMaterialBuilder::build() {
 
     // Emit Metal chunks
     if (!metalEntries.empty()) {
-        container.addChild<filamat::DictionaryTextChunk>(std::move(metalDictionary), ChunkType::DictionaryMetal);
-        container.addChild<MaterialTextChunk>(std::move(metalEntries), std::move(metalDictionary), ChunkType::MaterialMetal);
+        const auto& dictionaryChunk = container.addChild<filamat::DictionaryTextChunk>(
+                std::move(metalDictionary), ChunkType::DictionaryMetal);
+        container.addChild<MaterialTextChunk>(std::move(metalEntries),
+                dictionaryChunk.getDictionary(), ChunkType::MaterialMetal);
     }
 #endif
 
     // Flatten all chunks in the container into a Package.
-    size_t packageSize = container.getSize();
-    Package package(packageSize);
+    Package package(container.getSize());
     Flattener f(package);
     container.flatten(f);
     package.setValid(!errorOccured);

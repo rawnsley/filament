@@ -22,6 +22,7 @@
 #include <backend/Handle.h>
 
 #include <filament/IndirectLight.h>
+#include <filament/Texture.h>
 
 #include <utils/compiler.h>
 
@@ -46,7 +47,7 @@ public:
     float getIntensity() const noexcept { return mIntensity; }
     void setIntensity(float intensity) noexcept { mIntensity = intensity; }
     void setRotation(math::mat3f const& rotation) noexcept { mRotation = rotation; }
-    const math::mat3f& getRotation() const { return mRotation; }
+    const math::mat3f& getRotation() const noexcept { return mRotation; }
     size_t getMaxMipLevel() const noexcept { return mMaxMipLevel; }
 
 private:

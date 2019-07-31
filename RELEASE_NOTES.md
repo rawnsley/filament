@@ -3,14 +3,24 @@
 This file contains one line summaries of commits that are worthy of mentioning in release notes.
 A new header is inserted each time a *tag* is created.
 
+- Added support for vertex morphing.
+- Introduced custom attributes, accessible from the vertex shader.
+- Added Java / Kotlin bindings for KtxLoader.
+- Added JavaScript / Typescript bindings for the new `RenderTarget` class.
+- Added base path to glTF loadResources method for JavaScript.
+- Added support for iOS `CVPixelBuffer` external images with the OpenGL backend.
 
-# Release notes
+## sceneform-1.9pr4
 
+- Added `gltf_bloom` Android sample to show gltfio and the `RenderTarget` API.
+- Added `getMaterialInstanceAt` to the Java version of RenderableManager.
+- Fix JNI bindings for setting values in parameter arrays.
 - Added JNI bindings for the gltfio library.
 - Fix support for parameter arrays in `.mat` files.
 - Added support for `RGB_11_11_10`
 - Removed support for `RGBM` (**warning:** source compatibility breakage)
 - IBL cubemap can now be of any size
+- `Texture::generatePrefilterMipmap` can be used for runtime generation of a reflection cubemap
 
 ## sceneform-1.9pr3
 

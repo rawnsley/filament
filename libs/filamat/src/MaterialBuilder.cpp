@@ -56,8 +56,8 @@ std::atomic<int> MaterialBuilderBase::materialBuilderClients(0);
 
 inline void assertSingleTargetApi(MaterialBuilderBase::TargetApi api) {
     // Assert that a single bit is set.
-    uint8_t bits = (uint8_t) api;
-    assert(bits && !(bits & bits - 1));
+    UTILS_UNUSED uint8_t bits = (uint8_t) api;
+    assert(bits && !(bits & bits - 1u));
 }
 
 void MaterialBuilderBase::prepare() {
@@ -386,6 +386,10 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
 }
 
 bool MaterialBuilder::findProperties() noexcept {
+    if (mMaterialDomain != MaterialDomain::SURFACE) {
+        return true;
+    }
+
 #ifndef FILAMAT_LITE
     using namespace filament::backend;
     GLSLTools glslTools;
@@ -397,7 +401,7 @@ bool MaterialBuilder::findProperties() noexcept {
     std::fill_n(allProperties, MATERIAL_PROPERTIES_COUNT, true);
 
     // Use the first permutation to generate the shader code.
-    assert(mCodeGenPermutations.size() > 0);
+    assert(!mCodeGenPermutations.empty());
     CodeGenParams params = mCodeGenPermutations[0];
     std::string shaderCodeAllProperties = peek(ShaderType::FRAGMENT, params, allProperties);
 
@@ -420,16 +424,19 @@ bool MaterialBuilder::runSemanticAnalysis() noexcept {
     GLSLTools glslTools;
 
     // Use the first permutation to generate the shader code.
-    assert(mCodeGenPermutations.size() > 0);
+    assert(!mCodeGenPermutations.empty());
     CodeGenParams params = mCodeGenPermutations[0];
 
-    ShaderModel model;
+    TargetApi targetApi = params.targetApi;
+    assertSingleTargetApi(targetApi);
+    ShaderModel model = static_cast<ShaderModel>(params.shaderModel);
+
     std::string shaderCode = peek(ShaderType::VERTEX, params, mProperties);
-    bool result = glslTools.analyzeVertexShader(shaderCode, model, mTargetApi);
+    bool result = glslTools.analyzeVertexShader(shaderCode, model, mMaterialDomain, targetApi);
     if (!result) return false;
 
     shaderCode = peek(ShaderType::FRAGMENT, params, mProperties);
-    result = glslTools.analyzeFragmentShader(shaderCode, model, mTargetApi);
+    result = glslTools.analyzeFragmentShader(shaderCode, model, mMaterialDomain, targetApi);
     return result;
 #else
     return true;
@@ -490,8 +497,8 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
     std::vector<uint32_t> spirv;
     std::string msl;
 
-    ShaderGenerator sg(mProperties, mVariables,
-            mMaterialCode, mMaterialLineOffset, mMaterialVertexCode, mMaterialVertexLineOffset);
+    ShaderGenerator sg(mProperties, mVariables, mMaterialCode, mMaterialLineOffset,
+            mMaterialVertexCode, mMaterialVertexLineOffset, mMaterialDomain);
 
     bool emptyVertexCode = mMaterialVertexCode.empty();
     bool customDepth = sg.hasCustomDepthShader() ||
@@ -566,7 +573,7 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
                 spirvEntries.push_back(spirvEntry);
             }
             if (targetApi == TargetApi::METAL) {
-                assert(spirv.size() > 0);
+                assert(!spirv.empty());
                 assert(msl.length() > 0);
                 metalEntry.stage = v.stage;
                 metalEntry.shader = msl;
@@ -581,8 +588,10 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
 
     // Emit GLSL chunks (TextDictionaryReader and MaterialTextChunk).
     if (!glslEntries.empty()) {
-        container.addChild<filamat::DictionaryTextChunk>(glslDictionary, ChunkType::DictionaryGlsl);
-        container.addChild<MaterialTextChunk>(std::move(glslEntries), glslDictionary, ChunkType::MaterialGlsl);
+        const auto& dictionaryChunk = container.addChild<filamat::DictionaryTextChunk>(
+                std::move(glslDictionary), ChunkType::DictionaryGlsl);
+        container.addChild<MaterialTextChunk>(std::move(glslEntries),
+                dictionaryChunk.getDictionary(), ChunkType::MaterialGlsl);
     }
 
     // Emit SPIRV chunks (SpirvDictionaryReader and MaterialSpirvChunk).
@@ -594,8 +603,10 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
 
     // Emit Metal chunks (MetalDictionaryReader and MaterialMetalChunk).
     if (!metalEntries.empty()) {
-        container.addChild<filamat::DictionaryTextChunk>(metalDictionary, ChunkType::DictionaryMetal);
-        container.addChild<MaterialTextChunk>(std::move(metalEntries), metalDictionary, ChunkType::MaterialMetal);
+        const auto& dictionaryChunk = container.addChild<filamat::DictionaryTextChunk>(
+                std::move(metalDictionary), ChunkType::DictionaryMetal);
+        container.addChild<MaterialTextChunk>(std::move(metalEntries),
+                dictionaryChunk.getDictionary(), ChunkType::MaterialMetal);
     }
 #endif
 
@@ -629,15 +640,19 @@ Package MaterialBuilder::build() noexcept {
 
     // Create chunk tree.
     ChunkContainer container;
-    writeChunks(container, info);
+    writeCommonChunks(container, info);
+    if (mMaterialDomain == MaterialDomain::SURFACE) {
+        writeSurfaceChunks(container);
+    }
 
     // Generate all shaders and write the shader chunks.
-    auto variants = determineVariants(mVariantFilter, isLit(), mShadowMultiplier);
+    const auto variants = mMaterialDomain == MaterialDomain::SURFACE ?
+        determineSurfaceVariants(mVariantFilter, isLit(), mShadowMultiplier) :
+        determinePostProcessVariants();
     bool success = generateShaders(variants, container, info);
 
     // Flatten all chunks in the container into a Package.
-    size_t packageSize = container.getSize();
-    Package package(packageSize);
+    Package package(container.getSize());
     Flattener f(package);
     container.flatten(f);
     package.setValid(success);
@@ -648,8 +663,8 @@ Package MaterialBuilder::build() noexcept {
 const std::string MaterialBuilder::peek(filament::backend::ShaderType type,
         const CodeGenParams& params, const PropertyList& properties) noexcept {
 
-    ShaderGenerator sg(properties, mVariables,
-            mMaterialCode, mMaterialLineOffset, mMaterialVertexCode, mMaterialVertexLineOffset);
+    ShaderGenerator sg(properties, mVariables, mMaterialCode, mMaterialLineOffset,
+            mMaterialVertexCode, mMaterialVertexLineOffset, mMaterialDomain);
 
     MaterialInfo info;
     prepareToBuild(info);
@@ -669,27 +684,11 @@ const std::string MaterialBuilder::peek(filament::backend::ShaderType type,
     return std::string("");
 }
 
-void MaterialBuilder::writeChunks(ChunkContainer& container, MaterialInfo& info) const noexcept {
+void MaterialBuilder::writeCommonChunks(ChunkContainer& container, MaterialInfo& info) const noexcept {
     container.addSimpleChild<uint32_t>(ChunkType::MaterialVersion, filament::MATERIAL_VERSION);
     container.addSimpleChild<const char*>(ChunkType::MaterialName, mMaterialName.c_str_safe());
-    container.addSimpleChild<uint8_t>(ChunkType::MaterialShading, static_cast<uint8_t>(mShading));
-    container.addSimpleChild<uint8_t>(ChunkType::MaterialBlendingMode, static_cast<uint8_t>(mBlendingMode));
+    container.addSimpleChild<uint32_t>(ChunkType::MaterialShaderModels, mShaderModels.getValue());
     container.addSimpleChild<uint8_t>(ChunkType::MaterialDomain, static_cast<uint8_t>(mMaterialDomain));
-
-    if (mBlendingMode == BlendingMode::MASKED) {
-        container.addSimpleChild<float>(ChunkType::MaterialMaskThreshold, mMaskThreshold);
-    }
-
-    if (mShading == Shading::UNLIT) {
-        container.addSimpleChild<bool>(ChunkType::MaterialShadowMultiplier, mShadowMultiplier);
-    }
-
-    container.addSimpleChild<bool>(ChunkType::MaterialSpecularAntiAliasing, mSpecularAntiAliasing);
-    container.addSimpleChild<float>(ChunkType::MaterialSpecularAntiAliasingVariance, mSpecularAntiAliasingVariance);
-    container.addSimpleChild<float>(ChunkType::MaterialSpecularAntiAliasingThreshold, mSpecularAntiAliasingThreshold);
-    container.addSimpleChild<bool>(ChunkType::MaterialClearCoatIorChange, mClearCoatIorChange);
-    container.addSimpleChild<uint8_t>(ChunkType::MaterialTransparencyMode, static_cast<uint8_t>(mTransparencyMode));
-    container.addSimpleChild<uint32_t>(ChunkType::MaterialRequiredAttributes, mRequiredAttributes.getValue());
 
     // UIB
     container.addChild<MaterialUniformInterfaceBlockChunk>(info.uib);
@@ -697,16 +696,36 @@ void MaterialBuilder::writeChunks(ChunkContainer& container, MaterialInfo& info)
     // SIB
     container.addChild<MaterialSamplerInterfaceBlockChunk>(info.sib);
 
-    container.addSimpleChild<bool>(ChunkType::MaterialDepthWriteSet, mDepthWriteSet);
     container.addSimpleChild<bool>(ChunkType::MaterialDoubleSidedSet, mDoubleSidedCapability);
     container.addSimpleChild<bool>(ChunkType::MaterialDoubleSided, mDoubleSided);
+
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialBlendingMode, static_cast<uint8_t>(mBlendingMode));
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialTransparencyMode, static_cast<uint8_t>(mTransparencyMode));
+    container.addSimpleChild<bool>(ChunkType::MaterialDepthWriteSet, mDepthWriteSet);
     container.addSimpleChild<bool>(ChunkType::MaterialColorWrite, mColorWrite);
     container.addSimpleChild<bool>(ChunkType::MaterialDepthWrite, mDepthWrite);
     container.addSimpleChild<bool>(ChunkType::MaterialDepthTest, mDepthTest);
     container.addSimpleChild<uint8_t>(ChunkType::MaterialCullingMode, static_cast<uint8_t>(mCullingMode));
+}
+
+void MaterialBuilder::writeSurfaceChunks(ChunkContainer& container) const noexcept {
+    if (mBlendingMode == BlendingMode::MASKED) {
+        container.addSimpleChild<float>(ChunkType::MaterialMaskThreshold, mMaskThreshold);
+    }
+
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialShading, static_cast<uint8_t>(mShading));
+
+    if (mShading == Shading::UNLIT) {
+        container.addSimpleChild<bool>(ChunkType::MaterialShadowMultiplier, mShadowMultiplier);
+    }
+
+    container.addSimpleChild<bool>(ChunkType::MaterialClearCoatIorChange, mClearCoatIorChange);
+    container.addSimpleChild<uint32_t>(ChunkType::MaterialRequiredAttributes, mRequiredAttributes.getValue());
+    container.addSimpleChild<bool>(ChunkType::MaterialSpecularAntiAliasing, mSpecularAntiAliasing);
+    container.addSimpleChild<float>(ChunkType::MaterialSpecularAntiAliasingVariance, mSpecularAntiAliasingVariance);
+    container.addSimpleChild<float>(ChunkType::MaterialSpecularAntiAliasingThreshold, mSpecularAntiAliasingThreshold);
     container.addSimpleChild<uint8_t>(ChunkType::MaterialVertexDomain, static_cast<uint8_t>(mVertexDomain));
     container.addSimpleChild<uint8_t>(ChunkType::MaterialInterpolation, static_cast<uint8_t>(mInterpolation));
-    container.addSimpleChild<uint32_t>(ChunkType::MaterialShaderModels, mShaderModels.getValue());
 }
 
 } // namespace filamat

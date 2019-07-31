@@ -33,6 +33,7 @@ public class View {
     private RenderQuality mRenderQuality;
     private DepthPrepass mDepthPrepass = DepthPrepass.DEFAULT;
     private AmbientOcclusionOptions mAmbientOcclusionOptions;
+    private RenderTarget mRenderTarget;
 
     public static class DynamicResolutionOptions {
         public boolean enabled = false;
@@ -147,7 +148,7 @@ public class View {
 
     @NonNull @Size(min = 4)
     public float[] getClearColor(@NonNull @Size(min = 4) float[] out) {
-        out = assertFloat4(out);
+        out = Asserts.assertFloat4(out);
         nGetClearColor(getNativeObject(), out);
         return out;
     }
@@ -167,7 +168,13 @@ public class View {
     }
 
     public void setRenderTarget(@Nullable RenderTarget target) {
+        mRenderTarget = target;
         nSetRenderTarget(getNativeObject(), target != null ? target.getNativeObject() : 0);
+    }
+
+    @Nullable
+    public RenderTarget getRenderTarget() {
+        return mRenderTarget;
     }
 
     public void setSampleCount(int count) {
@@ -300,15 +307,6 @@ public class View {
 
     void clearNativeObject() {
         mNativeObject = 0;
-    }
-
-    @NonNull @Size(min = 4)
-    private static float[] assertFloat4(@Nullable float[] out) {
-        if (out == null) out = new float[4];
-        else if (out.length < 4) {
-            throw new ArrayIndexOutOfBoundsException("Array length must be at least 4");
-        }
-        return out;
     }
 
     private static native void nSetName(long nativeView, String name);

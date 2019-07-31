@@ -92,6 +92,7 @@ class UTILS_PUBLIC IndirectLight : public FilamentAPI {
     struct BuilderDetails;
 
 public:
+
     //! Use Builder to construct an IndirectLight object instance
     class Builder : public BuilderBase<BuilderDetails> {
         friend struct BuilderDetails;
@@ -279,6 +280,11 @@ public:
      * @param rotation 3x3 rotation matrix. Must be a rigid-body transform.
      */
     void setRotation(math::mat3f const& rotation) noexcept;
+
+    /**
+     * Returns the rigid-body transformation applied to the IBL.
+     */
+    const math::mat3f& getRotation() const noexcept;
 };
 
 } // namespace filament

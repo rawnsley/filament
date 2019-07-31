@@ -23,6 +23,9 @@
 
 #include <utils/Panic.h>
 
+#include <backend/DriverEnums.h>
+#include <filament/IndirectLight.h>
+
 #define IBL_INTEGRATION_PREFILTERED_CUBEMAP         0
 #define IBL_INTEGRATION_IMPORTANCE_SAMPLING         1
 #define IBL_INTEGRATION                             IBL_INTEGRATION_PREFILTERED_CUBEMAP
@@ -41,7 +44,6 @@ struct IndirectLight::BuilderDetails {
     float3 mIrradianceCoefs[9] = {};
     mat3f mRotation = {};
     float mIntensity = 30000.0f;
-    uint8_t mNumBands = 0;
 };
 
 using BuilderType = IndirectLight;
@@ -63,24 +65,23 @@ IndirectLight::Builder& IndirectLight::Builder::irradiance(uint8_t bands, float3
     size_t numCoefs = bands * bands;
     std::fill(std::begin(mImpl->mIrradianceCoefs), std::end(mImpl->mIrradianceCoefs), 0.0f);
     std::copy_n(sh, numCoefs, std::begin(mImpl->mIrradianceCoefs));
-    mImpl->mNumBands = bands;
     return *this;
 }
 
 IndirectLight::Builder& IndirectLight::Builder::radiance(uint8_t bands, float3 const* sh) noexcept {
     float3 irradiance[9];
     if (bands >= 1) {
-        irradiance[0] = sh[0] * 0.282095;
+        irradiance[0] = sh[0] * 0.282095f;
         if (bands >= 2) {
-            irradiance[1] = sh[1] * 0.325735;
-            irradiance[2] = sh[2] * 0.325735;
-            irradiance[3] = sh[3] * 0.325735;
+            irradiance[1] = sh[1] * -0.325735f;
+            irradiance[2] = sh[2] *  0.325735f;
+            irradiance[3] = sh[3] * -0.325735f;
             if (bands >= 3) {
-                irradiance[4] = sh[4] * 0.045523;
-                irradiance[5] = sh[5] * 0.091046;
-                irradiance[6] = sh[6] * 0.157696;
-                irradiance[7] = sh[7] * 0.091046;
-                irradiance[8] = sh[8] * 0.045523;
+                irradiance[4] = sh[4] *  0.273137f;
+                irradiance[5] = sh[5] * -0.273137f;
+                irradiance[6] = sh[6] *  0.078848f;
+                irradiance[7] = sh[7] * -0.273137f;
+                irradiance[8] = sh[8] *  0.136569f;
             }
         }
     }
@@ -137,7 +138,6 @@ IndirectLight* IndirectLight::Builder::build(Engine& engine) {
 namespace details {
 
 FIndirectLight::FIndirectLight(FEngine& engine, const Builder& builder) noexcept {
-
     if (builder->mReflectionsMap) {
         mReflectionsMapHandle = upcast(builder->mReflectionsMap)->getHwHandle();
         mMaxMipLevel = builder->mReflectionsMap->getLevels();
@@ -183,5 +183,10 @@ float IndirectLight::getIntensity() const noexcept {
 void IndirectLight::setRotation(mat3f const& rotation) noexcept {
     upcast(this)->setRotation(rotation);
 }
+
+const math::mat3f& IndirectLight::getRotation() const noexcept {
+    return upcast(this)->getRotation();
+}
+
 
 } // namespace filament
