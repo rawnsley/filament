@@ -69,7 +69,7 @@ enum class Visualization : int {
     IMAGE_GBUFFER_NORMALS
 };
 
-static const char* DEFAULT_IBL = "envs/venetian_crossroads";
+static const char* DEFAULT_IBL = "venetian_crossroads_2k";
 static const char* INI_FILENAME = "gltf_baker.ini";
 static const char* TMP_UV_FILENAME = "gltf_baker_tmp_uv.png";
 static const char* TMP_AO_FILENAME = "gltf_baker_tmp_ao.png";
@@ -329,7 +329,7 @@ static void updateViewerMesh(BakerApp& app) {
         app.viewerAsset->getAnimator();
 
         // Remove old renderables and add new renderables to the scene.
-        app.viewer->setAsset(app.viewerAsset, app.names, !app.viewerActualSize);
+        app.viewer->setAsset(app.viewerAsset, !app.viewerActualSize);
 
         // Destory old Filament entities.
         app.loader->destroyAsset(previousViewerAsset);

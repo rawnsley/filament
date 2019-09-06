@@ -119,8 +119,8 @@ add_mesh("assets/models/monkey/monkey.obj" "suzanne.filamesh")
 add_mesh("third_party/models/shader_ball/shader_ball.obj" "shader_ball.filamesh")
 
 # Generate IBL and skybox images using cmgen.
-set(CMGEN_ARGS -x . --format=ktx --size=256 --extract-blur=0.1)
-set(CMGEN_ARGS_TINY -x . --format=ktx --size=64 --extract-blur=0.1)
+set(CMGEN_ARGS --quiet -x . --format=ktx --size=256 --extract-blur=0.1)
+set(CMGEN_ARGS_TINY --quiet -x . --format=ktx --size=64 --extract-blur=0.1)
 function(add_envmap SOURCE TARGET)
     set(source_envmap "${ROOT_DIR}/${SOURCE}")
 
@@ -133,11 +133,9 @@ function(add_envmap SOURCE TARGET)
 
     set(target_skyboxes ${target_skyboxes} ${target_skybox} ${target_skybox_tiny} PARENT_SCOPE)
 
-    set(target_envmaps ${target_envmaps}
-            ${target_envmap} ${target_envmap_etc} ${target_envmap_s3tc} PARENT_SCOPE)
+    set(target_envmaps ${target_envmaps} ${target_envmap} PARENT_SCOPE)
 
-    add_custom_command(OUTPUT ${target_skybox} ${target_skybox_tiny}
-                ${target_envmap} ${target_envmap_etc} ${target_envmap_s3tc}
+    add_custom_command(OUTPUT ${target_skybox} ${target_skybox_tiny} ${target_envmap}
 
         # Create a low-resolution skybox, then rename it.
         COMMAND cmgen ${CMGEN_ARGS_TINY} ${source_envmap}
@@ -150,7 +148,6 @@ function(add_envmap SOURCE TARGET)
         DEPENDS cmgen)
 endfunction()
 
-add_envmap("third_party/environments/syferfontein_18d_clear_2k.hdr" "syferfontein_18d_clear_2k")
 add_envmap("third_party/environments/venetian_crossroads_2k.hdr" "venetian_crossroads_2k")
 add_envmap("third_party/environments/pillars_2k.hdr" "pillars_2k")
 

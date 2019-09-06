@@ -1673,6 +1673,21 @@ bool OpenGLDriver::isTextureFormatSupported(TextureFormat format) {
     return getInternalFormat(format) != 0;
 }
 
+bool OpenGLDriver::isTextureFormatMipmappable(TextureFormat format) {
+    // The OpenGL spec for GenerateMipmap stipulates that it returns INVALID_OPERATION unless
+    // the sized internal format is both color-renderable and texture-filterable.
+    switch (format) {
+        case TextureFormat::DEPTH16:
+        case TextureFormat::DEPTH24:
+        case TextureFormat::DEPTH32F:
+        case TextureFormat::DEPTH24_STENCIL8:
+        case TextureFormat::DEPTH32F_STENCIL8:
+            return false;
+        default:
+            return isRenderTargetFormatSupported(format);
+    }
+}
+
 bool OpenGLDriver::isRenderTargetFormatSupported(TextureFormat format) {
     // Supported formats per http://docs.gl/es3/glRenderbufferStorage, note that desktop OpenGL may
     // support more formats, but it requires querying GL_INTERNALFORMAT_SUPPORTED which is not
@@ -2251,11 +2266,18 @@ void OpenGLDriver::beginRenderPass(Handle<HwRenderTarget> rth,
     setViewport(params.viewport.left, params.viewport.bottom,
             params.viewport.width, params.viewport.height);
 
-    setScissor(params.viewport.left, params.viewport.bottom,
-            params.viewport.width, params.viewport.height);
+    // Use scissor test if not told to ignore, and if the viewport doesn't cover the whole target.
+    const bool respectScissor = !(clearFlags & RenderPassFlags::IGNORE_SCISSOR) &&
+                                (params.viewport.left != 0 ||
+                                    params.viewport.bottom != 0 ||
+                                    params.viewport.width != rt->width ||
+                                    params.viewport.height != rt->height);
+    if (respectScissor) {
+        setScissor(params.viewport.left, params.viewport.bottom,
+                params.viewport.width, params.viewport.height);
+    }
 
     if (clearFlags & TargetBufferFlags::ALL) {
-        const bool respectScissor = !(clearFlags & RenderPassFlags::IGNORE_SCISSOR);
         const bool clearColor = clearFlags & TargetBufferFlags::COLOR;
         const bool clearDepth = clearFlags & TargetBufferFlags::DEPTH;
         const bool clearStencil = clearFlags & TargetBufferFlags::STENCIL;
@@ -2723,6 +2745,14 @@ void OpenGLDriver::pushGroupMarker(char const* string,  size_t len) {
 #endif
 }
 
+void OpenGLDriver::startCapture(int) {
+
+}
+
+void OpenGLDriver::stopCapture(int) {
+
+}
+
 void OpenGLDriver::popGroupMarker(int) {
 #ifdef GL_EXT_debug_marker
     if (ext.EXT_debug_marker) {
@@ -2993,6 +3023,14 @@ void OpenGLDriver::draw(PipelineState state, Handle<HwRenderPrimitive> rph) {
     DEBUG_MARKER()
 
     OpenGLProgram* p = handle_cast<OpenGLProgram*>(state.program);
+
+    // If the material debugger is enabled, avoid fatal (or cascading) errors and that can occur
+    // during the draw call when the program is invalid. The shader compile error has already been
+    // dumped to the console at this point, so it's fine to simply return early.
+    if (FILAMENT_ENABLE_MATDBG && UTILS_UNLIKELY(!p->isValid())) {
+        return;
+    }
+
     useProgram(p);
 
     const GLRenderPrimitive* rp = handle_cast<const GLRenderPrimitive *>(rph);

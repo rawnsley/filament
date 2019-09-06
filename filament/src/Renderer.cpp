@@ -30,7 +30,8 @@
 #include <backend/PixelBufferDescriptor.h>
 
 #include "fg/FrameGraph.h"
-#include "fg/FrameGraphResource.h"
+#include "fg/FrameGraphHandle.h"
+#include "fg/ResourceAllocator.h"
 
 
 #include <utils/Panic.h>
@@ -228,7 +229,7 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
      * Frame graph
      */
 
-    FrameGraph fg;
+    FrameGraph fg(engine.getResourceAllocator());
 
     const TextureFormat hdrFormat = getHdrFormat(view);
 
@@ -239,7 +240,7 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
     const bool colorPassNeedsDepthBuffer = hasPostProcess;
 
     const backend::Handle<backend::HwRenderTarget> viewRenderTarget = getRenderTarget(view);
-    FrameGraphResource output = fg.importResource("viewRenderTarget",
+    FrameGraphRenderTargetHandle fgViewRenderTarget = fg.importRenderTarget("viewRenderTarget",
             { .viewport = vp }, viewRenderTarget, vp.width, vp.height,
             view.getDiscardedTargetBuffers());
 
@@ -266,7 +267,7 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
         pass.appendSortedCommands(RenderPass::CommandTypeFlags::DEPTH);
     }
 
-    FrameGraphResource ssao = ppm.ssao(fg, pass, svp, cameraInfo, view.getAmbientOcclusionOptions());
+    FrameGraphId<FrameGraphTexture> ssao = ppm.ssao(fg, pass, svp, cameraInfo, view.getAmbientOcclusionOptions());
 
     // --------------------------------------------------------------------------------------------
 
@@ -279,9 +280,10 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
     TargetBufferFlags clearFlags = view.getClearFlags() & TargetBufferFlags::COLOR | TargetBufferFlags::DEPTH;
 
     struct ColorPassData {
-        FrameGraphResource color;
-        FrameGraphResource depth;
-        FrameGraphResource ssao;
+        FrameGraphId<FrameGraphTexture> color;
+        FrameGraphId<FrameGraphTexture> depth;
+        FrameGraphId<FrameGraphTexture> ssao;
+        FrameGraphRenderTargetHandle rt;
     };
 
     auto& colorPass = fg.addPass<ColorPassData>("Color Pass",
@@ -289,34 +291,31 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
             (FrameGraph::Builder& builder, ColorPassData& data) {
 
                 if (useSSAO) {
-                    data.ssao = builder.read(ssao);
+                    data.ssao = builder.sample(ssao);
                 }
 
                 data.color = builder.createTexture("Color Buffer",
-                        { .width = svp.width, .height = svp.height, .format = hdrFormat, .samples = msaa });
+                        { .width = svp.width, .height = svp.height, .format = hdrFormat });
 
                 if (colorPassNeedsDepthBuffer) {
                     data.depth = builder.createTexture("Depth Buffer", {
                             .width = svp.width, .height = svp.height,
-                            .format = TextureFormat::DEPTH24,
-                            .samples = msaa
+                            .format = TextureFormat::DEPTH24
                     });
+                    data.depth = builder.write(builder.read(data.depth));
                 }
 
-                FrameGraphRenderTarget::Descriptor desc{
+                data.color = builder.write(builder.read(data.color));
+                data.rt = builder.createRenderTarget("Color Pass Target", {
                         .samples = msaa,
                         .attachments.color = data.color,
                         .attachments.depth = data.depth
-                };
-
-                auto attachments = builder.useRenderTarget("Color Pass Target", desc, clearFlags);
-                data.color = attachments.color;
-                data.depth = attachments.depth;
+                }, clearFlags);
             },
             [&pass, &ppm, colorPassBegin, colorPassEnd, jobFroxelize, &js, &view]
                     (FrameGraphPassResources const& resources,
                             ColorPassData const& data, DriverApi& driver) {
-                auto out = resources.getRenderTarget(data.color);
+                auto out = resources.getRenderTarget(data.rt);
                 Handle<HwTexture> ssao;
                 if (data.ssao.isValid()) {
                     ssao = resources.getTexture(data.ssao);
@@ -343,7 +342,7 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
             });
 
     jobFroxelize = nullptr;
-    FrameGraphResource input = colorPass.getData().color;
+    FrameGraphId<FrameGraphTexture> input = colorPass.getData().color;
 
     /*
      * Post Processing...
@@ -386,7 +385,7 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
 
     fg.present(input);
 
-    fg.moveResource(output, input);
+    fg.moveResource(fgViewRenderTarget, input);
 
     fg.compile();
     //fg.export_graphviz(slog.d);
@@ -487,7 +486,7 @@ bool FRenderer::beginFrame(FSwapChain* swapChain) {
 
     // latch the frame time
     std::chrono::duration<double> time{ getUserTime() };
-    float h = (float)time.count();
+    float h = float(time.count());
     float l = float(time.count() - h);
     mShaderUserTime = { h, l, 0, 0 };
 
@@ -522,6 +521,9 @@ void FRenderer::endFrame() {
 
     driver.endFrame(mFrameId);
 
+    // do this before engine.flush()
+    engine.getResourceAllocator().gc();
+
     // Run the component managers' GC in parallel
     // WARNING: while doing this we can't access any component manager
     auto& js = engine.getJobSystem();
@@ -532,7 +534,6 @@ void FRenderer::endFrame() {
 
     // make sure we're done with the gcs
     js.waitAndRelease(job);
-
 
 #if EXTRA_TIMING_INFO
     if (UTILS_UNLIKELY(frameInfoManager.isLapRecordsEnabled())) {

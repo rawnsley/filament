@@ -16,9 +16,9 @@
 
 package com.google.android.filament;
 
-import com.google.android.filament.proguard.UsedByReflection;
-
 import android.support.annotation.NonNull;
+
+import com.google.android.filament.proguard.UsedByReflection;
 
 public class Engine {
     private long mNativeObject;
@@ -278,7 +278,7 @@ public class Engine {
     }
 
     @UsedByReflection("TextureHelper.java")
-    long getNativeObject() {
+    public long getNativeObject() {
         if (mNativeObject == 0) {
             throw new IllegalStateException("Calling method on destroyed Engine");
         }

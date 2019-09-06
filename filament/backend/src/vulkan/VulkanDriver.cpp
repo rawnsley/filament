@@ -393,16 +393,10 @@ void VulkanDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
         TargetBufferFlags targets, uint32_t width, uint32_t height, uint8_t samples,
         TargetBufferInfo color, TargetBufferInfo depth,
         TargetBufferInfo stencil) {
+    auto colorTexture = color.handle ? handle_cast<VulkanTexture>(mHandleMap, color.handle) : nullptr;
+    auto depthTexture = depth.handle ? handle_cast<VulkanTexture>(mHandleMap, depth.handle) : nullptr;
     auto renderTarget = construct_handle<VulkanRenderTarget>(mHandleMap, rth, mContext,
-            width, height, color.level);
-    if (color.handle) {
-        auto colorTexture = handle_cast<VulkanTexture>(mHandleMap, color.handle);
-        renderTarget->setColorImage(colorTexture);
-    }
-    if (depth.handle) {
-        auto depthTexture = handle_cast<VulkanTexture>(mHandleMap, depth.handle);
-        renderTarget->setDepthImage(depthTexture);
-    }
+            width, height, color.level, colorTexture, depthTexture);
     mDisposer.createDisposable(renderTarget, [this, rth] () {
         destruct_handle<VulkanRenderTarget>(mHandleMap, rth);
     });
@@ -585,6 +579,19 @@ bool VulkanDriver::isTextureFormatSupported(TextureFormat format) {
     VkFormatProperties info;
     vkGetPhysicalDeviceFormatProperties(mContext.physicalDevice, vkformat, &info);
     return info.optimalTilingFeatures != 0;
+}
+
+bool VulkanDriver::isTextureFormatMipmappable(backend::TextureFormat format) {
+    switch (format) {
+        case TextureFormat::DEPTH16:
+        case TextureFormat::DEPTH24:
+        case TextureFormat::DEPTH32F:
+        case TextureFormat::DEPTH24_STENCIL8:
+        case TextureFormat::DEPTH32F_STENCIL8:
+            return false;
+        default:
+            return isRenderTargetFormatSupported(format);
+    }
 }
 
 bool VulkanDriver::isRenderTargetFormatSupported(TextureFormat format) {
@@ -918,6 +925,14 @@ void VulkanDriver::popGroupMarker(int) {
     if (mContext.debugMarkersSupported) {
         vkCmdDebugMarkerEndEXT(mContext.currentCommands->cmdbuffer);
     }
+}
+
+void VulkanDriver::startCapture(int) {
+
+}
+
+void VulkanDriver::stopCapture(int) {
+
 }
 
 void VulkanDriver::readPixels(Handle<HwRenderTarget> src,

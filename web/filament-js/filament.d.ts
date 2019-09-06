@@ -70,6 +70,7 @@ export class TextureSampler {
 }
 
 export class MaterialInstance {
+    public setBoolParameter(name: string, value: boolean): void;
     public setFloatParameter(name: string, value: number): void;
     public setFloat2Parameter(name: string, value: float2): void;
     public setFloat3Parameter(name: string, value: float3): void;
@@ -202,6 +203,8 @@ export class Renderer {
 
 export class Material {
     public createInstance(): MaterialInstance;
+    public getDefaultInstance(): MaterialInstance;
+    public getName(): string;
 }
 
 export class Frustum {
@@ -241,6 +244,11 @@ export class Camera {
 
 export class IndirectLight {
     public setIntensity(intensity: number);
+    public getIntensity(): number;
+    public setRotation(value: mat3);
+    public getRotation(): mat3;
+    public getDirectionEstimate(): float3;
+    public getColorEstimate(direction: float3): float4;
 }
 
 export class IcoSphere {
@@ -276,7 +284,7 @@ export class View {
 export class TransformManager {
     public hasComponent(entity: Entity): boolean;
     public getInstance(entity: Entity): TransformManager$Instance;
-    public create(entity: Entity, parent: TransformManager$Instance, xform: mat4): void;
+    public create(entity: Entity): void;
     public destroy(entity: Entity): void;
     public setParent(instance: TransformManager$Instance, parent: TransformManager$Instance): void;
     public setTransform(instance: TransformManager$Instance, xform: mat4): void;
@@ -293,7 +301,7 @@ interface Filamesh {
 }
 
 export class Engine {
-    public static create(HTMLCanvasElement): Engine;
+    public static create(canvas: HTMLCanvasElement, contextOptions?: object): Engine;
     public createCamera(): Camera;
     public createIblFromKtx(url: string): IndirectLight;
     public createMaterial(url: string): Material;
@@ -576,6 +584,15 @@ export enum Texture$Usage {
     DEPTH_ATTACHMENT,
 }
 
+export enum Texture$CubemapFace {
+    POSITIVE_X,
+    NEGATIVE_X,
+    POSITIVE_Y,
+    NEGATIVE_Y,
+    POSITIVE_Z,
+    NEGATIVE_Z,
+}
+
 export enum RenderTarget$AttachmentPoint {
     COLOR,
     DEPTH,
@@ -589,14 +606,15 @@ export enum VertexAttribute {
     UV1 = 4,
     BONE_INDICES = 5,
     BONE_WEIGHTS = 6,
-    CUSTOM0 = 7,
-    CUSTOM1 = 8,
-    CUSTOM2 = 9,
-    CUSTOM3 = 10,
-    CUSTOM4 = 11,
-    CUSTOM5 = 12,
-    CUSTOM6 = 13,
-    CUSTOM7 = 14,
+    UNUSED = 7,
+    CUSTOM0 = 8,
+    CUSTOM1 = 9,
+    CUSTOM2 = 10,
+    CUSTOM3 = 11,
+    CUSTOM4 = 12,
+    CUSTOM5 = 13,
+    CUSTOM6 = 14,
+    CUSTOM7 = 15,
     MORPH_POSITION_0 = CUSTOM0,
     MORPH_POSITION_1 = CUSTOM1,
     MORPH_POSITION_2 = CUSTOM2,
@@ -651,4 +669,20 @@ export enum WrapMode {
     CLAMP_TO_EDGE,
     REPEAT,
     MIRRORED_REPEAT,
+}
+
+export function _malloc(size: number): number;
+export function _free(size: number);
+
+interface HeapInterface {
+    set(buffer: any, pointer: number): any;
+    subarray(buffer: any, offset: number): any;
+}
+
+export const HEAPU8 : HeapInterface;
+
+export class SurfaceOrientation$Builder {
+    public vertexCount(count: number): SurfaceOrientation$Builder;
+    public normals(count: number, stride: number): SurfaceOrientation$Builder;
+    public build(): any;
 }

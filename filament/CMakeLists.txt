@@ -45,6 +45,10 @@ set(SRCS
         src/components/RenderableManager.cpp
         src/components/TransformManager.cpp
         src/fg/FrameGraph.cpp
+        src/fg/FrameGraphHandle.cpp
+        src/fg/fg/RenderTarget.cpp
+        src/fg/fg/ResourceEntry.cpp
+        src/fg/ResourceAllocator.cpp
         src/Box.cpp
         src/Camera.cpp
         src/Color.cpp
@@ -89,7 +93,13 @@ set(PRIVATE_HDRS
         src/fg/FrameGraph.h
         src/fg/FrameGraphPass.h
         src/fg/FrameGraphPassResources.h
-        src/fg/FrameGraphResource.h
+        src/fg/FrameGraphHandle.h
+        src/fg/fg/PassNode.h
+        src/fg/fg/RenderTarget.h
+        src/fg/fg/ResourceEntry.h
+        src/fg/fg/ResourceNode.h
+        src/fg/ResourceAllocator.h
+        src/fg/fg/VirtualResource.h
         src/details/Allocators.h
         src/details/Camera.h
         src/details/Culler.h
@@ -251,6 +261,14 @@ target_link_libraries(${TARGET} PUBLIC filaflat)
 target_link_libraries(${TARGET} PUBLIC filabridge)
 target_link_libraries(${TARGET} PUBLIC image_headers)
 target_link_libraries(${TARGET} PUBLIC ibl)
+
+# Link in matdbg for Desktop + Debug only since it pulls in filamat and a web server.
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT IOS AND NOT ANDROID AND NOT WEBGL)
+    target_link_libraries(${TARGET} PUBLIC matdbg)
+    add_definitions(-DFILAMENT_ENABLE_MATDBG=1)
+else()
+    add_definitions(-DFILAMENT_ENABLE_MATDBG=0)
+endif()
 
 # Android, iOS, and WebGL do not use bluegl.
 if(NOT IOS AND NOT ANDROID AND NOT WEBGL)

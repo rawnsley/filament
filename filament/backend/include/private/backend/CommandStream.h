@@ -44,9 +44,9 @@
 #include <thread>
 #include <utility>
 
-#include <assert.h>
+#include <cassert>
 #include <cstddef>
-#include <stdint.h>
+#include <cstdint>
 
 // Set to true to print every commands out on log.d. This requires RTTI and DEBUG
 #define DEBUG_COMMAND_STREAM false
@@ -99,7 +99,7 @@ public:
         // of return value -- it allows the compiler to perform the tail call optimization.
         intptr_t next;
         mExecute(driver, this, &next);
-        return reinterpret_cast<CommandBase*>(reinterpret_cast<char*>(this) + next);
+        return reinterpret_cast<CommandBase*>(reinterpret_cast<intptr_t>(this) + next);
     }
 
     inline ~CommandBase() noexcept = default;
@@ -205,12 +205,12 @@ public:
 
 // ------------------------------------------------------------------------------------------------
 
-#ifdef NDEBUG
-    #define DEBUG_COMMAND(methodName, params...)
+#if defined(NDEBUG)
+    #define DEBUG_COMMAND(methodName, ...)
 #else
     // For now, simply pass the method name down as a string and throw away the parameters.
     // This is good enough for certain debugging needs and we can improve this later.
-    #define DEBUG_COMMAND(methodName, params...) mDriver->debugCommand(#methodName)
+    #define DEBUG_COMMAND(methodName, ...) mDriver->debugCommand(#methodName)
 #endif
 
 class CommandStream {

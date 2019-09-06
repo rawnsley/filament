@@ -228,7 +228,7 @@ private:
 #ifndef NDEBUG
     using HandleArena = utils::Arena<HandleAllocator,
             utils::LockingPolicy::SpinLock,
-            utils::TrackingPolicy::HighWatermark>;
+            utils::TrackingPolicy::Debug>;
 #else
     using HandleArena = utils::Arena<HandleAllocator,
             utils::LockingPolicy::SpinLock>;
@@ -475,8 +475,8 @@ private:
         } pack;
 
         struct {
-            vec4gli scissor = 0;
-            vec4gli viewport = 0;
+            vec4gli scissor { 0 };
+            vec4gli viewport { 0 };
         } window;
 
         struct {

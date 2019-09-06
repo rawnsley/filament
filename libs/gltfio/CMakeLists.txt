@@ -42,22 +42,31 @@ if (CMAKE_CROSSCOMPILING)
     include(${IMPORT_EXECUTABLES})
 endif()
 
-function(generate_mat SHADINGMODEL BLENDING)
-    set(GENERATED_MAT "${RESOURCE_DIR}/${SHADINGMODEL}_${BLENDING}.mat")
+function(generate_mat SHADINGMODEL BLENDING DOUBLESIDED)
+    set(GENERATED_MAT "${RESOURCE_DIR}/${SHADINGMODEL}_${BLENDING}_${DOUBLESIDED}.mat")
     configure_file(materials/ubershader.mat.in ${GENERATED_MAT})
     set(MATERIAL_SRCS ${MATERIAL_SRCS} ${GENERATED_MAT} PARENT_SCOPE)
 endfunction()
 
 set(MATERIAL_SRCS)
-generate_mat(lit transparent)
-generate_mat(lit opaque)
-generate_mat(lit masked)
-generate_mat(specularGlossiness transparent)
-generate_mat(specularGlossiness opaque)
-generate_mat(specularGlossiness masked)
-generate_mat(unlit transparent)
-generate_mat(unlit opaque)
-generate_mat(unlit masked)
+generate_mat(lit fade false)
+generate_mat(lit opaque false)
+generate_mat(lit masked false)
+generate_mat(specularGlossiness fade false)
+generate_mat(specularGlossiness opaque false)
+generate_mat(specularGlossiness masked false)
+generate_mat(unlit fade false)
+generate_mat(unlit opaque false)
+generate_mat(unlit masked false)
+generate_mat(lit fade true)
+generate_mat(lit opaque true)
+generate_mat(lit masked true)
+generate_mat(specularGlossiness fade true)
+generate_mat(specularGlossiness opaque true)
+generate_mat(specularGlossiness masked true)
+generate_mat(unlit fade true)
+generate_mat(unlit opaque true)
+generate_mat(unlit masked true)
 
 set(RESOURCE_BINS)
 foreach (input_path ${MATERIAL_SRCS})
@@ -111,15 +120,8 @@ if (NOT WEBGL AND NOT ANDROID AND NOT IOS)
     # ==================================================================================================
     # Link the core library with additional dependencies to create the "full" library
     # ==================================================================================================
-    add_library(${TARGET} STATIC ${PUBLIC_HDRS}
-        src/MaterialGenerator.cpp
-        src/AssetPipeline.cpp)
-    target_link_libraries(${TARGET} PUBLIC
-        filamat
-        xatlas
-        meshoptimizer
-        gltfio_core
-        rays)
+    add_library(${TARGET} STATIC ${PUBLIC_HDRS} src/MaterialGenerator.cpp)
+    target_link_libraries(${TARGET} PUBLIC filamat gltfio_core)
     target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
 
     # ==================================================================================================
@@ -146,3 +148,11 @@ else()
     install(DIRECTORY ${PUBLIC_HDR_DIR}/gltfio DESTINATION include)
 
 endif()
+
+# ==================================================================================================
+# Create the glTF pipeline library (used by gltf_baker)
+# ==================================================================================================
+
+add_library(gltfio_pipeline STATIC ${PUBLIC_HDRS} src/AssetPipeline.cpp)
+target_link_libraries(gltfio_pipeline PUBLIC xatlas meshoptimizer gltfio rays)
+target_include_directories(gltfio_pipeline PUBLIC ${PUBLIC_HDR_DIR})

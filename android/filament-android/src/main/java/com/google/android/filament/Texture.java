@@ -16,12 +16,12 @@
 
 package com.google.android.filament;
 
-import com.google.android.filament.proguard.UsedByReflection;
-
 import android.support.annotation.IntRange;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.Size;
+
+import com.google.android.filament.proguard.UsedByReflection;
 
 import java.nio.Buffer;
 import java.nio.BufferOverflowException;
@@ -524,7 +524,7 @@ public class Texture {
 
 
     @UsedByReflection("TextureHelper.java")
-    long getNativeObject() {
+    public long getNativeObject() {
         if (mNativeObject == 0) {
             throw new IllegalStateException("Calling method on destroyed Texture");
         }

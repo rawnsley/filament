@@ -19,6 +19,7 @@ package com.google.android.filament;
 import android.support.annotation.IntRange;
 import android.support.annotation.NonNull;
 import android.support.annotation.Size;
+
 import com.google.android.filament.proguard.UsedByNative;
 
 import java.nio.Buffer;
@@ -338,7 +339,7 @@ public class Material {
         mDefaultInstance.setParameter(name, texture, sampler);
     }
 
-    long getNativeObject() {
+    public long getNativeObject() {
         if (mNativeObject == 0) {
             throw new IllegalStateException("Calling method on destroyed Material");
         }

@@ -16,6 +16,8 @@
 
 #include "details/Engine.h"
 
+#include "MaterialParser.h"
+
 #include "details/DFG.h"
 #include "details/VertexBuffer.h"
 #include "details/Fence.h"
@@ -32,14 +34,14 @@
 #include "details/Texture.h"
 #include "details/View.h"
 
+#include "fg/ResourceAllocator.h"
+
 #include "private/backend/Program.h"
 
 #include <private/filament/SibGenerator.h>
 
 #include <filament/Exposure.h>
 #include <filament/MaterialEnums.h>
-
-#include <MaterialParser.h>
 
 #include <filaflat/ShaderBuilder.h>
 
@@ -158,6 +160,24 @@ void FEngine::init() {
     mCommandStream = CommandStream(*mDriver, mCommandBufferQueue.getCircularBuffer());
     DriverApi& driverApi = getDriverApi();
 
+#if FILAMENT_ENABLE_MATDBG
+    // Disable the web server for regression tests that occur in hermetic environments.
+    if (mBackend != backend::Backend::NOOP) {
+        debug.server = new matdbg::DebugServer(matdbg::ENGINE, 8080);
+
+        // Sometimes the server can fail to spin up (e.g. if the above port is already in use).
+        // When this occurs, carry onward, developers can look at civetweb.txt for details.
+        if (!debug.server->isReady()) {
+            delete debug.server;
+            debug.server = nullptr;
+        } else {
+            debug.server->setEditCallback(FMaterial::onEditCallback);
+        }
+    }
+#endif
+
+    mResourceAllocator = new fg::ResourceAllocator(driverApi);
+
     // Parse all post process shaders now, but create them lazily
     mPostProcessParser = std::make_unique<MaterialParser>(mBackend,
             MATERIALS_POSTPROCESS_DATA, MATERIALS_POSTPROCESS_SIZE);
@@ -228,6 +248,7 @@ void FEngine::init() {
 
 FEngine::~FEngine() noexcept {
     ASSERT_DESTRUCTOR(mTerminated, "Engine destroyed but not terminated!");
+    delete mResourceAllocator;
     delete mDriver;
     if (mOwnPlatform) {
         DefaultPlatform::destroy((DefaultPlatform**)&mPlatform);
@@ -250,6 +271,7 @@ void FEngine::shutdown() {
      */
 
     mPostProcessManager.terminate(driver);  // free-up post-process manager resources
+    mResourceAllocator->terminate();
     mDFG->terminate();                      // free-up the DFG
     mRenderableManager.terminate();         // free-up all renderables
     mLightManager.terminate();              // free-up all lights
@@ -333,6 +355,8 @@ void FEngine::prepare() {
 }
 
 void FEngine::gc() {
+    // Note: this runs in a Job
+
     JobSystem& js = mJobSystem;
     auto parent = js.createJob();
     auto em = std::ref(mEntityManager);
