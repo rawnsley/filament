@@ -291,7 +291,6 @@ Driver* PlatformEGL::createDriver(void* sharedContext) noexcept {
         goto error;
     }
 
-<<<<<<< HEAD
     EGLint attributeValue;
 
     slog.i << "mEGLConfig" << io::endl;
@@ -310,10 +309,8 @@ Driver* PlatformEGL::createDriver(void* sharedContext) noexcept {
     eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_SAMPLE_BUFFERS, &attributeValue); slog.i << "EGL_SAMPLE_BUFFERS = " << attributeValue << io::endl;
     eglGetConfigAttrib(mEGLDisplay, mEGLTransparentConfig, EGL_SAMPLES, &attributeValue);        slog.i << "EGL_SAMPLES = " << attributeValue << io::endl;
     
-=======
     initializeGlExtensions();
 
->>>>>>> 356610ba1d46e2c0d6e3a6475b7891f3387502e5
     // success!!
     return OpenGLDriverFactory::create(this, sharedContext);
 
