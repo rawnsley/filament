@@ -13,7 +13,7 @@ void main() {
 
         #if defined(HAS_SKINNING_OR_MORPHING)
 
-            if (objectUniforms.morphingEnabled == 1) {
+            if (objectUniforms.morphingEnabled == 2) {
                 vec3 normal0, normal1, normal2, normal3;
                 toTangentFrame(mesh_custom4, normal0);
                 toTangentFrame(mesh_custom5, normal1);
