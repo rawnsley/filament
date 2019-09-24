@@ -83,7 +83,8 @@ private fun format(bitmap: Bitmap) = when (bitmap.config) {
     Bitmap.Config.ALPHA_8   -> Texture.Format.ALPHA
     Bitmap.Config.RGB_565   -> Texture.Format.RGB
     Bitmap.Config.ARGB_8888 -> Texture.Format.RGBA
-    Bitmap.Config.RGBA_F16  -> Texture.Format.RGBA
+    // API 26+
+    //Bitmap.Config.RGBA_F16  -> Texture.Format.RGBA
     else -> throw IllegalArgumentException("Unknown bitmap configuration")
 }
 
@@ -92,6 +93,7 @@ private fun type(bitmap: Bitmap) = when (bitmap.config) {
     Bitmap.Config.ALPHA_8   -> Texture.Type.UBYTE
     Bitmap.Config.RGB_565   -> Texture.Type.UBYTE
     Bitmap.Config.ARGB_8888 -> Texture.Type.UBYTE
-    Bitmap.Config.RGBA_F16  -> Texture.Type.HALF
+    // API 26+
+    //Bitmap.Config.RGBA_F16  -> Texture.Type.HALF
     else -> throw IllegalArgumentException("Unsupported bitmap configuration")
 }
