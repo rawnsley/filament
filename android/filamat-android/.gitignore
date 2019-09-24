@@ -6,6 +6,7 @@
 /.idea/caches
 /.idea/gradle.xml
 .DS_Store
+/bin
 /build
 /captures
 .externalNativeBuild
