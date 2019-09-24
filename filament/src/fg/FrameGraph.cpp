@@ -66,10 +66,10 @@ const char* FrameGraph::Builder::getName(FrameGraphHandle const& r) const noexce
 
 bool FrameGraph::Builder::isAttachment(FrameGraphId<FrameGraphTexture> r) const noexcept {
     fg::ResourceEntry<FrameGraphTexture>& entry = mFrameGraph.getResourceEntryUnchecked(r);
-    return entry.descriptor.usage & (
+    return any(entry.descriptor.usage & (
             TextureUsage::COLOR_ATTACHMENT |
             TextureUsage::DEPTH_ATTACHMENT |
-            TextureUsage::STENCIL_ATTACHMENT);
+            TextureUsage::STENCIL_ATTACHMENT));
 }
 
 FrameGraphRenderTarget::Descriptor&
@@ -154,7 +154,6 @@ FrameGraphPassResources::getRenderTarget(FrameGraphRenderTargetHandle handle, ui
     // overwrite discard flags with the per-rendertarget (per-pass) computed value
     info.params.flags.discardStart = renderTarget.targetFlags.discardStart;
     info.params.flags.discardEnd   = renderTarget.targetFlags.discardEnd;
-    info.params.flags.dependencies = renderTarget.targetFlags.dependencies;
 
     // check that this FrameGraphRenderTarget is indeed declared by this pass
     ASSERT_POSTCONDITION_NON_FATAL(info.target,
@@ -367,7 +366,7 @@ TargetBufferFlags FrameGraph::computeDiscardFlags(DiscardPhase phase,
     auto const& desc = renderTarget.cache->desc;
 
     // for each pass...
-    while (discardFlags && curr != first) {
+    while (any(discardFlags) && curr != first) {
         PassNode const& pass = *curr++;
         // TODO: maybe find a more efficient way of figuring this out
         // for each resource written or read...
@@ -588,8 +587,7 @@ FrameGraph& FrameGraph::compile() noexcept {
             pRenderTarget->targetFlags = {
                     .clear = {},  // this is eventually set by the user
                     .discardStart = discardStart,
-                    .discardEnd = discardEnd,
-                    .dependencies = {}
+                    .discardEnd = discardEnd
             };
         }
     }

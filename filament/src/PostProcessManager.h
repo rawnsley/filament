@@ -43,10 +43,6 @@ public:
 
     void init() noexcept;
     void terminate(backend::DriverApi& driver) noexcept;
-    void setSource(uint32_t viewportWidth, uint32_t viewportHeight,
-            backend::Handle<backend::HwTexture> color,
-            backend::Handle<backend::HwTexture> depth,
-            uint32_t textureWidth, uint32_t textureHeight) const noexcept;
 
     FrameGraphId<FrameGraphTexture> toneMapping(FrameGraph& fg,
             FrameGraphId<FrameGraphTexture> input,
@@ -85,11 +81,6 @@ private:
             FrameGraphId<FrameGraphTexture> input,
             FrameGraphId<FrameGraphTexture> depth, math::int2 axis) noexcept;
 
-    // we need only one of these
-    mutable UniformBuffer mPostProcessUb;
-    backend::Handle<backend::HwSamplerGroup> mPostProcessSbh;
-    backend::Handle<backend::HwUniformBuffer> mPostProcessUbh;
-
     class PostProcessMaterial {
     public:
         PostProcessMaterial() noexcept = default;
@@ -118,6 +109,8 @@ private:
     PostProcessMaterial mSSAO;
     PostProcessMaterial mMipmapDepth;
     PostProcessMaterial mBlur;
+    PostProcessMaterial mTonemapping;
+    PostProcessMaterial mFxaa;
 
     backend::Handle<backend::HwTexture> mNoSSAOTexture;
 };

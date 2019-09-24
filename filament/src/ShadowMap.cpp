@@ -136,13 +136,13 @@ void ShadowMap::prepare(DriverApi& driver, SamplerGroup& sb) noexcept {
             TargetBufferFlags::DEPTH, dim, dim, 1,
             {}, { mShadowMapHandle }, {});
 
-    SamplerParams s;
-    s.filterMag = SamplerMagFilter::LINEAR;
-    s.filterMin = SamplerMinFilter::LINEAR;
-    s.compareFunc = SamplerCompareFunc::LE;
-    s.compareMode = SamplerCompareMode::COMPARE_TO_TEXTURE;
-    s.depthStencil = true;
-    sb.setSampler(PerViewSib::SHADOW_MAP, { mShadowMapHandle, s });
+    sb.setSampler(PerViewSib::SHADOW_MAP, {
+        mShadowMapHandle, {
+                    .filterMag = SamplerMagFilter::LINEAR,
+                    .filterMin = SamplerMinFilter::LINEAR,
+                    .compareFunc = SamplerCompareFunc::LE,
+                    .compareMode = SamplerCompareMode::COMPARE_TO_TEXTURE
+            }});
 }
 
 void ShadowMap::render(DriverApi& driver, RenderPass& pass, FView& view) noexcept {
@@ -166,7 +166,7 @@ void ShadowMap::render(DriverApi& driver, RenderPass& pass, FView& view) noexcep
     params.viewport = viewport;
     // disable scissor for clearing so the whole surface, but set the viewport to the
     // the inset-by-1 rectangle.
-    params.flags.clear |= RenderPassFlags::IGNORE_SCISSOR;
+    params.flags.ignoreScissor = true;
 
     FCamera const& camera = getCamera();
     details::CameraInfo cameraInfo = {

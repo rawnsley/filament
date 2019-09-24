@@ -29,13 +29,13 @@ namespace metal {
 
 static inline MTLTextureUsage getMetalTextureUsage(TextureUsage usage) {
     NSUInteger u = 0;
-    if (usage & TextureUsage::COLOR_ATTACHMENT) {
+    if (any(usage & TextureUsage::COLOR_ATTACHMENT)) {
         u |= MTLTextureUsageRenderTarget;
     }
-    if (usage & TextureUsage::DEPTH_ATTACHMENT) {
+    if (any(usage & TextureUsage::DEPTH_ATTACHMENT)) {
         u |= MTLTextureUsageRenderTarget;
     }
-    if (usage & TextureUsage::STENCIL_ATTACHMENT) {
+    if (any(usage & TextureUsage::STENCIL_ATTACHMENT)) {
         u |= MTLTextureUsageRenderTarget;
     }
 
@@ -46,7 +46,7 @@ static inline MTLTextureUsage getMetalTextureUsage(TextureUsage usage) {
 }
 
 static inline MTLStorageMode getMetalStorageMode(TextureUsage usage) {
-    if (usage & TextureUsage::UPLOADABLE) {
+    if (any(usage & TextureUsage::UPLOADABLE)) {
 #if defined(IOS)
         return MTLStorageModeShared;
 #else
@@ -198,16 +198,24 @@ void MetalRenderPrimitive::setBuffers(MetalVertexBuffer* vertexBuffer, MetalInde
     uint32_t bufferIndex = 0;
     for (uint32_t attributeIndex = 0; attributeIndex < attributeCount; attributeIndex++) {
         if (!(enabledAttributes & (1U << attributeIndex))) {
+            // TODO: all vertex attributes are vec4 (vector of floats), except for
+            // mesh_bone_indices, which is a uvec4 (vector of unsigned integers).
+            // We must use the correct format, but ideally the Metal driver should not need to know
+            // this.
+            const auto boneIndicesLocation = 5; // VertexAttribute::BONE_INDICES
+            const MTLVertexFormat format = attributeIndex == boneIndicesLocation ?
+                    MTLVertexFormatUInt4 : MTLVertexFormatFloat4;
+
             // If the attribute is not enabled, bind it to the zero buffer. It's a Metal error for a
             // shader to read from missing vertex attributes.
             vertexDescription.attributes[attributeIndex] = {
-                    .format = MTLVertexFormatChar4,
+                    .format = format,
                     .buffer = ZERO_VERTEX_BUFFER,
                     .offset = 0
             };
             vertexDescription.layouts[ZERO_VERTEX_BUFFER] = {
                     .step = MTLVertexStepFunctionConstant,
-                    .stride = 4
+                    .stride = 16
             };
             continue;
         }
@@ -481,9 +489,9 @@ MTLLoadAction MetalRenderTarget::getLoadAction(const RenderPassParams& params,
         TargetBufferFlags buffer) {
     const auto clearFlags = (TargetBufferFlags) params.flags.clear;
     const auto discardStartFlags = params.flags.discardStart;
-    if (clearFlags & buffer) {
+    if (any(clearFlags & buffer)) {
         return MTLLoadActionClear;
-    } else if (discardStartFlags & buffer) {
+    } else if (any(discardStartFlags & buffer)) {
         return MTLLoadActionDontCare;
     }
     return MTLLoadActionLoad;
@@ -492,14 +500,14 @@ MTLLoadAction MetalRenderTarget::getLoadAction(const RenderPassParams& params,
 MTLStoreAction MetalRenderTarget::getStoreAction(const RenderPassParams& params,
         TargetBufferFlags buffer) {
     const auto discardEndFlags = params.flags.discardEnd;
-    if (discardEndFlags & buffer) {
+    if (any(discardEndFlags & buffer)) {
         return MTLStoreActionDontCare;
     }
-    if (buffer & TargetBufferFlags::COLOR) {
+    if (any(buffer & TargetBufferFlags::COLOR)) {
         const bool shouldResolveColor = (multisampledColor && color);
         return shouldResolveColor ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
     }
-    if (buffer & TargetBufferFlags::DEPTH) {
+    if (any(buffer & TargetBufferFlags::DEPTH)) {
         const bool shouldResolveDepth = (multisampledDepth && depth);
         return shouldResolveDepth ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
     }

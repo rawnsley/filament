@@ -440,8 +440,13 @@ void FMaterial::applyPendingEdits() noexcept {
     mPendingEdits = nullptr;
 }
 
-// Callback handler for the debug server, potentially called from any thread. This method is never
-// called during normal operation and exists for debugging purposes only.
+/**
+ * Callback handlers for the debug server, potentially called from any thread. These methods are
+ * never called during normal operation and exist for debugging purposes only.
+ * 
+ * @{
+ */
+
 void FMaterial::onEditCallback(void* userdata, const utils::CString& name, const void* packageData,
         size_t packageSize) {
     FMaterial* material = upcast((Material*) userdata);
@@ -453,11 +458,24 @@ void FMaterial::onEditCallback(void* userdata, const utils::CString& name, const
             packageSize);
 }
 
-MaterialParser* FMaterial::createParser(backend::Backend backend, const void* data,
-        size_t size) {
+void FMaterial::onQueryCallback(void* userdata, uint16_t* pvariants) {
+    FMaterial* material = upcast((Material*) userdata);
+    uint16_t variants = 0;
+    auto& cachedPrograms = material->mCachedPrograms;
+    for (size_t i = 0, n = cachedPrograms.size(); i < n; ++i) {
+        if (cachedPrograms[i]) {
+            variants |= (1 << i);
+        }
+    }
+    *pvariants = variants;
+}
+
+ /** @}*/
+ 
+MaterialParser* FMaterial::createParser(backend::Backend backend, const void* data, size_t size) {
     MaterialParser* materialParser = new MaterialParser(backend, data, size);
 
-    bool materialOK = materialParser->parse() && materialParser->isShadingMaterial();
+    bool materialOK = materialParser->parse();
     if (!ASSERT_POSTCONDITION_NON_FATAL(materialOK, "could not parse the material package")) {
         return nullptr;
     }

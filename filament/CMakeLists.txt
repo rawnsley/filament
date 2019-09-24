@@ -142,6 +142,8 @@ set(MATERIAL_SRCS
         src/materials/skybox.mat
         src/materials/sao.mat
         src/materials/ssao.mat
+        src/materials/tonemapping.mat
+        src/materials/fxaa.mat
 )
 
 # Embed the binary resource blob for materials.
@@ -188,21 +190,29 @@ foreach (mat_src ${MATERIAL_SRCS})
 
     add_custom_command(
             OUTPUT ${output_path}
-            COMMAND matc ${MATC_BASE_FLAGS} -m material -o ${output_path} ${fullname}
-            DEPENDS ${fullname} matc
+            COMMAND matc ${MATC_BASE_FLAGS} -o ${output_path} ${fullname}
+            MAIN_DEPENDENCY ${fullname}
+            DEPENDS matc
             COMMENT "Compiling material ${mat_src} to ${output_path}"
     )
     list(APPEND MATERIAL_BINS ${output_path})
 endforeach()
 
-set(output_path "${MATERIAL_DIR}/postprocess.filamat")
+# tonemapping.mat and fxaa.mat have additional dependencies on included files
+
 add_custom_command(
-        OUTPUT ${output_path}
-        COMMAND matc ${MATC_BASE_FLAGS} -m postprocess -o ${output_path}
-        DEPENDS matc
-        COMMENT "Compiling post-process material ${output_path}"
+    OUTPUT "${MATERIAL_DIR}/tonemapping.filamat"
+    DEPENDS ../shaders/src/tone_mapping.fs
+    DEPENDS ../shaders/src/conversion_functions.fs
+    DEPENDS ../shaders/src/dithering.fs
+    APPEND
 )
-list(APPEND MATERIAL_BINS ${output_path})
+
+add_custom_command(
+    OUTPUT "${MATERIAL_DIR}/fxaa.filamat"
+    DEPENDS ../shaders/src/fxaa.fs
+    APPEND
+)
 
 add_custom_command(
         OUTPUT ${RESGEN_OUTPUTS}
@@ -317,13 +327,17 @@ set(LINUX_COMPILER_FLAGS
         -fPIC
 )
 
-set(FILAMENT_WARNINGS
-        -Wextra -Wno-unused-parameter
-        -Wextra-semi -Wnewline-eof -Wdeprecated -Wundef
-        -Wgnu-conditional-omitted-operand
-        -Wweak-vtables -Wnon-virtual-dtor -Wclass-varargs -Wimplicit-fallthrough
-        -Wover-aligned
-)
+if (MSVC_NATIVE)
+    set(FILAMENT_WARNINGS -W0)
+else()
+    set(FILAMENT_WARNINGS
+            -Wextra -Wno-unused-parameter
+            -Wextra-semi -Wnewline-eof -Wdeprecated -Wundef
+            -Wgnu-conditional-omitted-operand
+            -Wweak-vtables -Wnon-virtual-dtor -Wclass-varargs -Wimplicit-fallthrough
+            -Wover-aligned
+    )
+endif()
 
 # clang-cl maps -Wall to -Weverything, which clutters logs with benign -Wc++98-compat warnings
 # Use /W4 instead for clang-cl builds

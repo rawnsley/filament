@@ -30,6 +30,7 @@
 #include <filamat/IncludeCallback.h>
 #include <filamat/Package.h>
 
+#include <utils/BitmaskEnum.h>
 #include <utils/bitset.h>
 #include <utils/compiler.h>
 #include <utils/CString.h>
@@ -102,19 +103,18 @@ protected:
     static std::atomic<int> materialBuilderClients;
 };
 
-inline constexpr MaterialBuilderBase::TargetApi operator|(MaterialBuilderBase::TargetApi lhs,
-        MaterialBuilderBase::TargetApi rhs) noexcept {
-    return MaterialBuilderBase::TargetApi(uint8_t(lhs) | uint8_t(rhs));
-}
-
-inline constexpr MaterialBuilderBase::TargetApi operator|=(MaterialBuilderBase::TargetApi& lhs,
-        MaterialBuilderBase::TargetApi rhs) noexcept {
-    return lhs = (lhs | rhs);
-}
-
-inline constexpr bool operator&(MaterialBuilderBase::TargetApi lhs,
-        MaterialBuilderBase::TargetApi rhs) noexcept {
-    return bool(uint8_t(lhs) & uint8_t(rhs));
+// Utility function that looks at an Engine backend to determine TargetApi
+inline constexpr MaterialBuilderBase::TargetApi targetApiFromBackend(
+            filament::backend::Backend backend) noexcept {
+    using filament::backend::Backend;
+    using TargetApi = MaterialBuilderBase::TargetApi;
+    switch (backend) {
+        case Backend::DEFAULT: return TargetApi::ALL;
+        case Backend::OPENGL:  return TargetApi::OPENGL;
+        case Backend::VULKAN:  return TargetApi::VULKAN;
+        case Backend::METAL:   return TargetApi::METAL;
+        case Backend::NOOP:    return TargetApi::OPENGL;
+    }
 }
 
 class UTILS_PUBLIC MaterialBuilder : public MaterialBuilderBase {
@@ -232,7 +232,8 @@ public:
     // set vertex domain for this material
     MaterialBuilder& vertexDomain(VertexDomain domain) noexcept;
 
-    // how triangles are culled (doesn't affect points or lines, back-face culling by default)
+    // how triangles are culled by default (doesn't affect points or lines, BACK by default)
+    // material instances can override this
     MaterialBuilder& culling(CullingMode culling) noexcept;
 
     // enable/disable color-buffer write (enabled by default)
@@ -457,4 +458,8 @@ private:
 };
 
 } // namespace filamat
+
+template<> struct utils::EnableBitMaskOperators<filamat::MaterialBuilder::TargetApi>
+        : public std::true_type {};
+
 #endif

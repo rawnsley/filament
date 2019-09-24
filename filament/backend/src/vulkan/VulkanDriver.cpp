@@ -396,7 +396,7 @@ void VulkanDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
     auto colorTexture = color.handle ? handle_cast<VulkanTexture>(mHandleMap, color.handle) : nullptr;
     auto depthTexture = depth.handle ? handle_cast<VulkanTexture>(mHandleMap, depth.handle) : nullptr;
     auto renderTarget = construct_handle<VulkanRenderTarget>(mHandleMap, rth, mContext,
-            width, height, color.level, colorTexture, depthTexture);
+            width, height, color.level, colorTexture, depth.level, depthTexture);
     mDisposer.createDisposable(renderTarget, [this, rth] () {
         destruct_handle<VulkanRenderTarget>(mHandleMap, rth);
     });
@@ -673,9 +673,7 @@ void VulkanDriver::updateSamplerGroup(Handle<HwSamplerGroup> sbh,
     *sb->sb = samplerGroup;
 }
 
-void VulkanDriver::beginRenderPass(Handle<HwRenderTarget> rth,
-        const RenderPassParams& params) {
-
+void VulkanDriver::beginRenderPass(Handle<HwRenderTarget> rth, const RenderPassParams& params) {
     assert(mContext.currentCommands);
     assert(mContext.currentSurface);
     VulkanSurfaceContext& surface = *mContext.currentSurface;
@@ -689,39 +687,47 @@ void VulkanDriver::beginRenderPass(Handle<HwRenderTarget> rth,
     const auto depth = rt->getDepth();
     const bool hasColor = color.format != VK_FORMAT_UNDEFINED;
     const bool hasDepth = depth.format != VK_FORMAT_UNDEFINED;
-    const bool depthOnly = hasDepth && !hasColor;
 
     mDisposer.acquire(rt, mContext.currentCommands->resources);
     mDisposer.acquire(color.offscreen, mContext.currentCommands->resources);
     mDisposer.acquire(depth.offscreen, mContext.currentCommands->resources);
 
-    VkImageLayout finalLayout;
-    if (!rt->isOffscreen()) {
-        finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    } else if (depthOnly) {
-        finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    VkImageLayout finalColorLayout;
+    VkImageLayout finalDepthLayout;
+
+    if (rt->isOffscreen()) {
+
+        // If we're discarding the contents of the color buffer after the render pass, it's safe to
+        // assume that we will not be sampling from it.
+        finalColorLayout = any(params.flags.discardEnd & TargetBufferFlags::COLOR) ?
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        finalDepthLayout = VK_IMAGE_LAYOUT_GENERAL;
+
     } else {
-        finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        finalColorLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        finalDepthLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     }
 
     VkRenderPass renderPass = mFramebufferCache.getRenderPass({
-        .finalLayout = finalLayout,
+        .finalColorLayout = finalColorLayout,
+        .finalDepthLayout = finalDepthLayout,
         .colorFormat = color.format,
         .depthFormat = depth.format,
-        .flags.clear         = params.flags.clear,
-        .flags.discardStart  = params.flags.discardStart,
-        .flags.discardEnd    = params.flags.discardEnd,
-        .flags.dependencies  = params.flags.dependencies
+        .flags.clear = params.flags.clear,
+        .flags.discardStart = params.flags.discardStart,
+        .flags.discardEnd = params.flags.discardEnd
     });
     mBinder.bindRenderPass(renderPass);
 
     VulkanFboCache::FboKey fbo { .renderPass = renderPass };
     int numAttachments = 0;
     if (hasColor) {
-      fbo.attachments[numAttachments++] = color.view;
+        fbo.attachments[numAttachments++] = color.view;
     }
     if (hasDepth) {
-      fbo.attachments[numAttachments++] = depth.view;
+        fbo.attachments[numAttachments++] = depth.view;
     }
 
     VkRenderPassBeginInfo renderPassInfo {
@@ -806,25 +812,6 @@ void VulkanDriver::setRenderPrimitiveRange(Handle<HwRenderPrimitive> rph,
     primitive.count = count;
     primitive.minIndex = minIndex;
     primitive.maxIndex = maxIndex > minIndex ? maxIndex : primitive.maxVertexCount - 1;
-}
-
-void VulkanDriver::setViewportScissor(
-        int32_t left, int32_t bottom, uint32_t width, uint32_t height) {
-    assert(mContext.currentCommands && mCurrentRenderTarget);
-    // Compute the intersection of the requested scissor rectangle with the current viewport.
-    int32_t x = std::max(left, (int32_t) mContext.viewport.x);
-    int32_t y = std::max(bottom, (int32_t) mContext.viewport.y);
-    int32_t right = std::min(left + (int32_t) width,
-            (int32_t) (mContext.viewport.x + mContext.viewport.width));
-    int32_t top = std::min(bottom + (int32_t) height,
-            (int32_t) (mContext.viewport.y + mContext.viewport.height));
-    VkRect2D scissor {
-        .extent = { (uint32_t) right - x, (uint32_t) top - y },
-        .offset = { std::max(0, x), std::max(0, y) }
-    };
-
-    mCurrentRenderTarget->transformClientRectToPlatform(&scissor);
-    vkCmdSetScissor(mContext.currentCommands->cmdbuffer, 0, 1, &scissor);
 }
 
 void VulkanDriver::makeCurrent(Handle<HwSwapChain> drawSch, Handle<HwSwapChain> readSch) {
@@ -967,6 +954,9 @@ void VulkanDriver::blit(TargetBufferFlags buffers,
             "Destination format is not blittable")) {
         return;
     }
+    if (any(buffers & TargetBufferFlags::DEPTH)) {
+        utils::slog.w << "Depth blits are not yet supported." << utils::io::endl;
+    }
 #endif
 
     const int32_t srcRight = srcRect.left + srcRect.width;
@@ -1019,6 +1009,7 @@ void VulkanDriver::draw(PipelineState pipelineState, Handle<HwRenderPrimitive> r
     Handle<HwProgram> programHandle = pipelineState.program;
     RasterState rasterState = pipelineState.rasterState;
     PolygonOffset depthOffset = pipelineState.polygonOffset;
+    const Viewport& viewportScissor = pipelineState.scissor;
 
     auto* program = handle_cast<VulkanProgram>(mHandleMap, programHandle);
     mDisposer.acquire(program, commands->resources);
@@ -1105,15 +1096,39 @@ void VulkanDriver::draw(PipelineState pipelineState, Handle<HwRenderPrimitive> r
             VkSampler vksampler = mSamplerCache.getSampler(samplerParams);
             const auto* texture = handle_const_cast<VulkanTexture>(mHandleMap, boundSampler->t);
             mDisposer.acquire(texture, commands->resources);
+
+            // Check that we do not sample from the current color attachment. It's fine to sample
+            // from the current depth attachment when depth writes are disabled, which is useful in
+            // some SSAO implementations.
+            ASSERT_POSTCONDITION_NON_FATAL(
+                    mCurrentRenderTarget->getColor().image != texture->textureImage,
+                    "Attempting to sample color from the current render target");
+
+            VkImageLayout layout = any(texture->usage & TextureUsage::DEPTH_ATTACHMENT) ?
+                        VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
             mBinder.bindSampler(bindingPoint, {
                 .sampler = vksampler,
                 .imageView = texture->imageView,
-                .imageLayout = samplerParams.depthStencil ?
-                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL :
-                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                .imageLayout = layout
             });
         }
     }
+
+    // Set scissoring.
+    // Compute the intersection of the requested scissor rectangle with the current viewport.
+    const int32_t x = std::max(viewportScissor.left, (int32_t)mContext.viewport.x);
+    const int32_t y = std::max(viewportScissor.bottom, (int32_t)mContext.viewport.y);
+    const int32_t right = std::min(viewportScissor.left + (int32_t)viewportScissor.width,
+            (int32_t)(mContext.viewport.x + mContext.viewport.width));
+    const int32_t top = std::min(viewportScissor.bottom + (int32_t)viewportScissor.height,
+            (int32_t)(mContext.viewport.y + mContext.viewport.height));
+    VkRect2D scissor{
+            .extent = { (uint32_t)right - x, (uint32_t)top - y },
+            .offset = { std::max(0, x), std::max(0, y) }
+    };
+    rt->transformClientRectToPlatform(&scissor);
+    vkCmdSetScissor(cmdbuffer, 0, 1, &scissor);
 
     // Bind new descriptor sets if they need to change.
     VkDescriptorSet descriptors[2];

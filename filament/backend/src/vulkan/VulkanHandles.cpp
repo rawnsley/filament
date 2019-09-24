@@ -94,9 +94,10 @@ static VulkanAttachment createOffscreenAttachment(VulkanTexture* tex) {
     return { tex->vkformat, tex->textureImage, tex->imageView, tex->textureImageMemory, tex };
 }
 
-VulkanRenderTarget::VulkanRenderTarget(VulkanContext& context, uint32_t w, uint32_t h,
-        uint32_t miplevel, VulkanTexture* color, VulkanTexture* depth) : HwRenderTarget(w, h),
-        mContext(context), mOffscreen(true), mColorLevel(miplevel) {
+VulkanRenderTarget::VulkanRenderTarget(VulkanContext& context, uint32_t width, uint32_t height,
+        uint32_t colorLevel, VulkanTexture* color, uint32_t depthLevel, VulkanTexture* depth) :
+        HwRenderTarget(width, height), mContext(context), mOffscreen(true), mColorLevel(colorLevel),
+        mDepthLevel(depthLevel) {
     mColor = createOffscreenAttachment(color);
     mDepth = createOffscreenAttachment(depth);
 
@@ -107,7 +108,7 @@ VulkanRenderTarget::VulkanRenderTarget(VulkanContext& context, uint32_t w, uint3
             .image = mColor.image,
             .format = mColor.format,
             .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .subresourceRange.baseMipLevel = miplevel,
+            .subresourceRange.baseMipLevel = colorLevel,
             .subresourceRange.levelCount = 1
         };
         if (color->target == SamplerType::SAMPLER_CUBEMAP) {
@@ -125,7 +126,7 @@ VulkanRenderTarget::VulkanRenderTarget(VulkanContext& context, uint32_t w, uint3
             .image = mDepth.image,
             .format = mDepth.format,
             .subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .subresourceRange.baseMipLevel = miplevel,
+            .subresourceRange.baseMipLevel = depthLevel,
             .subresourceRange.levelCount = 1
         };
         if (depth->target == SamplerType::SAMPLER_CUBEMAP) {
@@ -309,21 +310,21 @@ VulkanTexture::VulkanTexture(VulkanContext& context, SamplerType target, uint8_t
         imageInfo.arrayLayers = 6;
         imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     }
-    if (usage & TextureUsage::SAMPLEABLE) {
+    if (any(usage & TextureUsage::SAMPLEABLE)) {
         imageInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
     }
-    if (usage & TextureUsage::COLOR_ATTACHMENT) {
+    if (any(usage & TextureUsage::COLOR_ATTACHMENT)) {
         imageInfo.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     }
-    if (usage & TextureUsage::STENCIL_ATTACHMENT) {
+    if (any(usage & TextureUsage::STENCIL_ATTACHMENT)) {
         imageInfo.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     }
-    if (usage & TextureUsage::UPLOADABLE) {
+    if (any(usage & TextureUsage::UPLOADABLE)) {
         // Uploadable textures can be used as a blit source (e.g. for mipmap generation)
         // therefore we must set both the TRANSFER_DST and TRANSFER_SRC flags.
         imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
-    if (usage & TextureUsage::DEPTH_ATTACHMENT) {
+    if (any(usage & TextureUsage::DEPTH_ATTACHMENT)) {
         imageInfo.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     }
 
@@ -331,6 +332,7 @@ VulkanTexture::VulkanTexture(VulkanContext& context, SamplerType target, uint8_t
     if (error) {
         utils::slog.d << "vkCreateImage: "
             << "result = " << error << ", "
+            << "handle = " << utils::io::hex << textureImage << utils::io::dec << ", "
             << "extent = " << w << "x" << h << "x"<< depth << ", "
             << "mipLevels = " << int(levels) << ", "
             << "format = " << vkformat << utils::io::endl;
@@ -367,7 +369,7 @@ VulkanTexture::VulkanTexture(VulkanContext& context, SamplerType target, uint8_t
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.subresourceRange.layerCount = 1;
     }
-    if (usage & TextureUsage::DEPTH_ATTACHMENT) {
+    if (any(usage & TextureUsage::DEPTH_ATTACHMENT)) {
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     }
     error = vkCreateImageView(context.device, &viewInfo, VKALLOC, &imageView);
@@ -581,20 +583,39 @@ void VulkanRenderPrimitive::setBuffers(VulkanVertexBuffer* vertexBuffer,
     memset(varray.attributes, 0, sizeof(varray.attributes));
     memset(varray.buffers, 0, sizeof(varray.buffers));
 
+    // Position should always be present.
+    assert(enabledAttributes & 1);
+
     // For each enabled attribute, append to each of the above lists. Note that a single VkBuffer
     // handle might be appended more than once, which is perfectly fine.
     uint32_t bufferIndex = 0;
     for (uint32_t attribIndex = 0; attribIndex < nattrs; attribIndex++) {
+        Attribute attrib = vertexBuffer->attributes[attribIndex];
+        VkFormat vkformat = getVkFormat(attrib.type, attrib.flags & Attribute::FLAG_NORMALIZED);
+
+        // We re-use the positions buffer as a dummy buffer for any disabled attribute that might
+        // be consumed by the shader.
         if (!(enabledAttributes & (1U << attribIndex))) {
-            continue;
+
+            // TODO: all vertex attributes are floats, except for mesh_bone_indices, which are
+            // unsigned integers. Ideally the Vulkan backend would not need to know about this.
+            const uint32_t kBoneIndicesLocation = 5; // VertexAttribute::BONE_INDICES
+            vkformat = attribIndex == kBoneIndicesLocation ? VK_FORMAT_R8G8B8A8_UINT : vkformat;
+
+            // TODO: avoid using dummy buffers by adding the concept of frozen renderables.
+            if (UTILS_LIKELY(enabledAttributes & 1)) {
+                attrib = vertexBuffer->attributes[0];
+            } else {
+                continue;
+            }
         }
-        const Attribute& attrib = vertexBuffer->attributes[attribIndex];
+
         buffers.push_back(vertexBuffer->buffers[attrib.buffer]->getGpuBuffer());
         offsets.push_back(attrib.offset);
         varray.attributes[bufferIndex] = {
             .location = attribIndex, // matches the GLSL layout specifier
             .binding = bufferIndex,  // matches the position within vkCmdBindVertexBuffers
-            .format = getVkFormat(attrib.type, attrib.flags & Attribute::FLAG_NORMALIZED),
+            .format = vkformat,
             .offset = 0
         };
         varray.buffers[bufferIndex] = {

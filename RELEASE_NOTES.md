@@ -5,13 +5,16 @@ A new header is inserted each time a *tag* is created.
 
 ## Next release
 
+- Backface culling can now be toggled on material instances.
+- Face direction is now reversed when transforms have negative scale.
 - Dielectrics now behave properly under a white furnace (energy preserving and conserving).
 - Clear coat roughness now remains in the 0..1 (previously remapped to the 0..0.6 range).
 - gltfio: Fixed several limitations with ubershader mode.
 - gltfio: Fixed a transforms issue with non-uniform scale.
 - webgl: Fixed an issue with JPEG textures.
-- Windows: fix link error in debug builds.
-- The web-based material inspector now allows editing GLSL code.
+- Windows: Fix link error in debug builds.
+- matdbg: Web server must now be enabled with an environment variable.
+- matdbg: Added support for editing GLSL and MSL code.
 
 ## v1.3.2
 

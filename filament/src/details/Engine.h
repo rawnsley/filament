@@ -28,6 +28,7 @@
 #include "details/Allocators.h"
 #include "details/Camera.h"
 #include "details/DebugRegistry.h"
+#include "details/Fence.h"
 #include "details/RenderTarget.h"
 #include "details/ResourceList.h"
 #include "details/Skybox.h"
@@ -149,15 +150,6 @@ public:
     const FMaterial* getSkyboxMaterial() const noexcept;
     const FIndirectLight* getDefaultIndirectLight() const noexcept { return mDefaultIbl; }
 
-    backend::Handle<backend::HwProgram> getPostProcessProgramSlow(PostProcessStage stage) const noexcept;
-    backend::Handle<backend::HwProgram> getPostProcessProgram(PostProcessStage stage) const noexcept {
-        backend::Handle<backend::HwProgram> program = mPostProcessPrograms[uint8_t(stage)];
-        if (UTILS_UNLIKELY(!program)) {
-            return getPostProcessProgramSlow(stage);
-        }
-        return program;
-    }
-
     backend::Handle<backend::HwRenderPrimitive> getFullScreenRenderPrimitive() const noexcept {
         return mFullScreenTriangleRph;
     }
@@ -243,7 +235,7 @@ public:
 
     FScene* createScene() noexcept;
     FView* createView() noexcept;
-    FFence* createFence(Fence::Type type = Fence::Type::SOFT) noexcept;
+    FFence* createFence(FFence::Type type) noexcept;
     FSwapChain* createSwapChain(void* nativeWindow, uint64_t flags) noexcept;
 
     FCamera* createCamera(utils::Entity entity) noexcept;
@@ -299,9 +291,6 @@ private:
 
     template<typename T, typename L>
     void cleanupResourceList(ResourceList<T, L>& list);
-
-    backend::Handle<backend::HwProgram> createPostProcessProgram(MaterialParser& parser,
-            backend::ShaderModel model, PostProcessStage stage) const noexcept;
 
     backend::Driver* mDriver = nullptr;
 
@@ -360,9 +349,6 @@ private:
 
     mutable FTexture* mDefaultIblTexture = nullptr;
     mutable FIndirectLight* mDefaultIbl = nullptr;
-
-    mutable backend::Handle<backend::HwProgram> mPostProcessPrograms[POST_PROCESS_STAGES_COUNT];
-    mutable std::unique_ptr<MaterialParser> mPostProcessParser;
 
     mutable utils::CountDownLatch mDriverBarrier;
 

@@ -46,6 +46,8 @@ PostProcessManager::PostProcessMaterial::PostProcessMaterial(FEngine& engine,
         uint8_t const* data, size_t size) noexcept {
     mMaterial = upcast(Material::Builder().package(data, size).build(engine));
     mMaterialInstance = mMaterial->getDefaultInstance();
+    // TODO: After all materials using this class have been converted to the post-process material
+    // domain, load both OPAQUE and TRANSPARENt variants here.
     mProgram = mMaterial->getProgram(0);
 }
 
@@ -83,21 +85,14 @@ PostProcessManager::PostProcessManager(FEngine& engine) noexcept : mEngine(engin
 }
 
 void PostProcessManager::init() noexcept {
-    mPostProcessUb = UniformBuffer(PostProcessingUib::getUib().getSize());
-
     // TODO: load materials lazily as to reduce start-up time and memory usage
     mSSAO = PostProcessMaterial(mEngine, MATERIALS_SAO_DATA, MATERIALS_SAO_SIZE);
     mMipmapDepth = PostProcessMaterial(mEngine, MATERIALS_MIPMAPDEPTH_DATA, MATERIALS_MIPMAPDEPTH_SIZE);
     mBlur = PostProcessMaterial(mEngine, MATERIALS_BLUR_DATA, MATERIALS_BLUR_SIZE);
+    mTonemapping = PostProcessMaterial(mEngine, MATERIALS_TONEMAPPING_DATA, MATERIALS_TONEMAPPING_SIZE);
+    mFxaa = PostProcessMaterial(mEngine, MATERIALS_FXAA_DATA, MATERIALS_FXAA_SIZE);
 
-    // create sampler for post-process FBO
     DriverApi& driver = mEngine.getDriverApi();
-    mPostProcessSbh = driver.createSamplerGroup(PostProcessSib::SAMPLER_COUNT);
-    mPostProcessUbh = driver.createUniformBuffer(mPostProcessUb.getSize(),
-            backend::BufferUsage::DYNAMIC);
-    driver.bindSamplers(BindingPoints::POST_PROCESS, mPostProcessSbh);
-    driver.bindUniformBuffer(BindingPoints::POST_PROCESS, mPostProcessUbh);
-
     mNoSSAOTexture = driver.createTexture(SamplerType::SAMPLER_2D, 1,
             TextureFormat::R8, 0, 1, 1, 1, TextureUsage::DEFAULT);
 
@@ -109,41 +104,12 @@ void PostProcessManager::init() noexcept {
 }
 
 void PostProcessManager::terminate(backend::DriverApi& driver) noexcept {
-    driver.destroySamplerGroup(mPostProcessSbh);
-    driver.destroyUniformBuffer(mPostProcessUbh);
     driver.destroyTexture(mNoSSAOTexture);
     mSSAO.terminate(mEngine);
     mMipmapDepth.terminate(mEngine);
     mBlur.terminate(mEngine);
-}
-
-void PostProcessManager::setSource(uint32_t viewportWidth, uint32_t viewportHeight,
-        backend::Handle<backend::HwTexture> color,
-        backend::Handle<backend::HwTexture> depth,
-        uint32_t textureWidth, uint32_t textureHeight) const noexcept {
-    FEngine& engine = mEngine;
-    DriverApi& driver = engine.getDriverApi();
-
-    // FXAA requires linear filtering. The post-processing stage however, doesn't
-    // use samplers.
-    backend::SamplerParams params;
-    params.filterMag = SamplerMagFilter::LINEAR;
-    params.filterMin = SamplerMinFilter::LINEAR;
-    SamplerGroup group(PostProcessSib::SAMPLER_COUNT);
-    group.setSampler(PostProcessSib::COLOR_BUFFER, color, params);
-    group.setSampler(PostProcessSib::DEPTH_BUFFER, depth, {});
-
-    auto duration = engine.getEngineTime();
-    float fraction = (duration.count() % 1000000000) / 1000000000.0f;
-
-    float2 uvScale = float2{ viewportWidth, viewportHeight } / float2{ textureWidth, textureHeight };
-
-    UniformBuffer& ub = mPostProcessUb;
-    ub.setUniform(offsetof(PostProcessingUib, time), fraction);
-    ub.setUniform(offsetof(PostProcessingUib, uvScale), uvScale);
-
-    driver.updateSamplerGroup(mPostProcessSbh, std::move(group));
-    driver.loadUniformBuffer(mPostProcessUbh, ub.toBufferDescriptor(driver));
+    mTonemapping.terminate(mEngine);
+    mFxaa.terminate(mEngine);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -159,9 +125,6 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::toneMapping(FrameGraph& fg, 
         FrameGraphId<FrameGraphTexture> output;
         FrameGraphRenderTargetHandle rt;
     };
-    backend::Handle<backend::HwProgram> toneMappingProgram = engine.getPostProcessProgram(
-            translucent ? PostProcessStage::TONE_MAPPING_TRANSLUCENT
-                        : PostProcessStage::TONE_MAPPING_OPAQUE);
 
     auto& ppToneMapping = fg.addPass<PostProcessToneMapping>("tonemapping",
             [&](FrameGraph::Builder& builder, PostProcessToneMapping& data) {
@@ -176,25 +139,27 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::toneMapping(FrameGraph& fg, 
             },
             [=](FrameGraphPassResources const& resources,
                     PostProcessToneMapping const& data, DriverApi& driver) {
-                PipelineState pipeline;
-                pipeline.rasterState.culling = RasterState::CullingMode::NONE;
-                pipeline.rasterState.colorWrite = true;
-                pipeline.rasterState.depthFunc = RasterState::DepthFunc::A;
-                pipeline.program = toneMappingProgram;
-
-                auto const& textureDesc = resources.getDescriptor(data.input);
                 auto const& color = resources.getTexture(data.input);
-                // TODO: the first parameters below are the *actual viewport* size
-                //       (as opposed to the size of the source texture). Currently we don't allow
-                //       the texture to be resized, so they match. We'll need something more
-                //       sophisticated in the future.
 
-                mPostProcessUb.setUniform(offsetof(PostProcessingUib, dithering), dithering);
-                setSource(textureDesc.width, textureDesc.height,
-                        color, {}, textureDesc.width, textureDesc.height);
+                FMaterialInstance* pInstance = mTonemapping.getMaterialInstance();
+                pInstance->setParameter("dithering", dithering);
+                pInstance->setParameter("colorBuffer", color, {});
+
+                pInstance->commit(driver);
+
+                const uint8_t variant = static_cast<uint8_t> (
+                        translucent ?
+                        PostProcessVariant::TRANSLUCENT : PostProcessVariant::OPAQUE );
+
+                PipelineState pipeline{
+                        .program = mTonemapping.getMaterial()->getProgram(variant),
+                        .rasterState = mTonemapping.getMaterial()->getRasterState(),
+                        .scissor = pInstance->getScissor()
+                };
 
                 auto const& target = resources.getRenderTarget(data.rt);
                 driver.beginRenderPass(target.target, target.params);
+                pInstance->use(driver);
                 driver.draw(pipeline, fullScreenRenderPrimitive);
                 driver.endRenderPass();
             });
@@ -215,10 +180,6 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::fxaa(FrameGraph& fg,
         FrameGraphRenderTargetHandle rt;
     };
 
-    backend::Handle<backend::HwProgram> antiAliasingProgram = engine.getPostProcessProgram(
-            translucent ? PostProcessStage::ANTI_ALIASING_TRANSLUCENT
-                        : PostProcessStage::ANTI_ALIASING_OPAQUE);
-
     auto& ppFXAA = fg.addPass<PostProcessFXAA>("fxaa",
             [&](FrameGraph::Builder& builder, PostProcessFXAA& data) {
                 auto const& inputDesc = fg.getDescriptor(input);
@@ -232,23 +193,29 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::fxaa(FrameGraph& fg,
             },
             [=](FrameGraphPassResources const& resources,
                     PostProcessFXAA const& data, DriverApi& driver) {
-                PipelineState pipeline;
-                pipeline.rasterState.culling = RasterState::CullingMode::NONE;
-                pipeline.rasterState.colorWrite = true;
-                pipeline.rasterState.depthFunc = RasterState::DepthFunc::A;
-                pipeline.program = antiAliasingProgram;
-
-                auto const& textureDesc = resources.getDescriptor(data.input);
                 auto const& texture = resources.getTexture(data.input);
-                // TODO: the first parameters below are the *actual viewport* size
-                //       (as opposed to the size of the source texture). Currently we don't allow
-                //       the texture to be resized, so they match. We'll need something more
-                //       sophisticated in the future.
-                setSource(textureDesc.width, textureDesc.height,
-                        texture, {}, textureDesc.width, textureDesc.height);
+
+                FMaterialInstance* pInstance = mFxaa.getMaterialInstance();
+                SamplerParams params;
+                params.filterMag = SamplerMagFilter::LINEAR;
+                params.filterMin = SamplerMinFilter::LINEAR;
+                pInstance->setParameter("colorBuffer", texture, params);
+
+                pInstance->commit(driver);
+
+                const uint8_t variant = static_cast<uint8_t> (
+                        translucent ?
+                        PostProcessVariant::TRANSLUCENT : PostProcessVariant::OPAQUE );
+
+                PipelineState pipeline{
+                        .program = mFxaa.getMaterial()->getProgram(variant),
+                        .rasterState = mFxaa.getMaterial()->getRasterState(),
+                        .scissor = pInstance->getScissor()
+                };
 
                 auto const& target = resources.getRenderTarget(data.rt);
                 driver.beginRenderPass(target.target, target.params);
+                pInstance->use(driver);
                 driver.draw(pipeline, fullScreenRenderPrimitive);
                 driver.endRenderPass();
             });
@@ -404,9 +371,8 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::ssao(FrameGraph& fg, RenderP
                         0.5f * cameraInfo.projection[0].x * desc.width,
                         0.5f * cameraInfo.projection[1].y * desc.height);
 
-                SamplerParams params;
                 FMaterialInstance* const pInstance = mSSAO.getMaterialInstance();
-                pInstance->setParameter("depth", depth, params);
+                pInstance->setParameter("depth", depth, {});
                 pInstance->setParameter("resolution",
                         float4{ desc.width, desc.height, 1.0f / desc.width, 1.0f / desc.height });
                 pInstance->setParameter("radius", data.options.radius);
@@ -421,6 +387,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::ssao(FrameGraph& fg, RenderP
                 pipeline.program = mSSAO.getProgram();
                 pipeline.rasterState = mSSAO.getMaterial()->getRasterState();
                 pipeline.rasterState.depthFunc = RasterState::DepthFunc::G;
+                pipeline.scissor = pInstance->getScissor();
 
                 driver.beginRenderPass(ssao.target, ssao.params);
                 pInstance->use(driver);
@@ -515,15 +482,16 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::mipmapPass(FrameGraph& fg,
                 auto in = resources.getTexture(data.in);
                 auto out = resources.getRenderTarget(data.rt, level + 1u);
 
-                SamplerParams params;
                 FMaterialInstance* const pInstance = mMipmapDepth.getMaterialInstance();
-                pInstance->setParameter("depth", in, params);
+                pInstance->setParameter("depth", in, {});
                 pInstance->setParameter("level", uint32_t(level));
                 pInstance->commit(driver);
 
-                PipelineState pipeline;
-                pipeline.program = mMipmapDepth.getProgram();
-                pipeline.rasterState = mMipmapDepth.getMaterial()->getRasterState();
+                PipelineState pipeline{
+                    .program = mMipmapDepth.getProgram(),
+                    .rasterState = mMipmapDepth.getMaterial()->getRasterState(),
+                    .scissor = pInstance->getScissor()
+                };
 
                 driver.beginRenderPass(out.target, out.params);
                 pInstance->use(driver);
@@ -576,10 +544,9 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::blurPass(FrameGraph& fg,
                 auto blurred = resources.getRenderTarget(data.rt);
                 auto const& desc = resources.getDescriptor(data.blurred);
 
-                SamplerParams params;
                 FMaterialInstance* const pInstance = mBlur.getMaterialInstance();
-                pInstance->setParameter("ssao", ssao, params);
-                pInstance->setParameter("depth", depth, params);
+                pInstance->setParameter("ssao", ssao, {});
+                pInstance->setParameter("depth", depth, {});
                 pInstance->setParameter("axis", axis);
                 pInstance->setParameter("resolution",
                         float4{ desc.width, desc.height, 1.0f / desc.width, 1.0f / desc.height });
@@ -589,6 +556,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::blurPass(FrameGraph& fg,
                 pipeline.program = mBlur.getProgram();
                 pipeline.rasterState = mBlur.getMaterial()->getRasterState();
                 pipeline.rasterState.depthFunc = RasterState::DepthFunc::G;
+                pipeline.scissor = pInstance->getScissor();
 
                 driver.beginRenderPass(blurred.target, blurred.params);
                 pInstance->use(driver);
